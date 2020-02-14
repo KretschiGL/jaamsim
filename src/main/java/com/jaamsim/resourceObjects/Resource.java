@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2013 Ausenco Engineering Canada Inc.
- * Copyright (C) 2016-2019 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,17 +24,13 @@ import com.jaamsim.ProbabilityDistributions.Distribution;
 import com.jaamsim.Samples.SampleConstant;
 import com.jaamsim.Samples.SampleInput;
 import com.jaamsim.Samples.TimeSeries;
-import com.jaamsim.Statistics.TimeBasedFrequency;
-import com.jaamsim.Statistics.TimeBasedStatistics;
 import com.jaamsim.basicsim.Entity;
 import com.jaamsim.events.Conditional;
 import com.jaamsim.events.EventManager;
 import com.jaamsim.events.ProcessTarget;
 import com.jaamsim.input.InputErrorException;
 import com.jaamsim.input.Keyword;
-import com.jaamsim.input.Output;
 import com.jaamsim.units.DimensionlessUnit;
-import com.jaamsim.units.TimeUnit;
 
 public class Resource extends AbstractResourceProvider {
 
@@ -51,12 +47,6 @@ public class Resource extends AbstractResourceProvider {
 	private int unitsInUse;  // number of resource units that are being used at present
 	private int lastCapacity; // capacity for the resource
 
-	//	Statistics
-	private final TimeBasedStatistics stats;
-	private final TimeBasedFrequency freq;
-	protected int unitsSeized;    // number of units that have been seized
-	protected int unitsReleased;  // number of units that have been released
-
 	{
 		trace.setHidden(false);
 		attributeDefinitionList.setHidden(false);
@@ -67,10 +57,7 @@ public class Resource extends AbstractResourceProvider {
 		this.addInput(capacity);
 	}
 
-	public Resource() {
-		stats = new TimeBasedStatistics();
-		freq = new TimeBasedFrequency(0, 10);
-	}
+	public Resource() {}
 
 	@Override
 	public void validate() {
@@ -91,17 +78,8 @@ public class Resource extends AbstractResourceProvider {
 	@Override
 	public void earlyInit() {
 		super.earlyInit();
-
 		unitsInUse = 0;
 		lastCapacity = this.getCapacity(0.0d);
-
-		// Clear statistics
-		stats.clear();
-		stats.addValue(0.0d, 0);
-		freq.clear();
-		freq.addValue(0.0d,  0);
-		unitsSeized = 0;
-		unitsReleased = 0;
 	}
 
 	@Override
@@ -116,6 +94,16 @@ public class Resource extends AbstractResourceProvider {
 	}
 
 	@Override
+	public int getCapacity(double simTime) {
+		return (int) capacity.getValue().getNextSample(simTime);
+	}
+
+	@Override
+	public int getUnitsInUse() {
+		return unitsInUse;
+	}
+
+	@Override
 	public boolean canSeize(int n, DisplayEntity ent) {
 		double simTime = getSimTime();
 		return getAvailableUnits(simTime) >= n;
@@ -123,26 +111,22 @@ public class Resource extends AbstractResourceProvider {
 
 	@Override
 	public void seize(int n, DisplayEntity ent) {
-		if (isTraceFlag()) trace(1, "seize(%s, %s)", n, ent);
+		super.seize(n, ent);
 		double simTime = getSimTime();
 		if (getAvailableUnits(simTime) < n)
 			error(ERR_CAPACITY, getCapacity(simTime), n);
 
 		unitsInUse += n;
-		unitsSeized += n;
-		stats.addValue(simTime, unitsInUse);
-		freq.addValue(simTime, unitsInUse);
+		collectStatistics(simTime, unitsInUse);
 	}
 
 	@Override
 	public void release(int m, DisplayEntity ent) {
-		if (isTraceFlag()) trace(1, "release(%s, %s)", m, ent);
 		int n = Math.min(m, unitsInUse);
+		super.release(n, ent);
 		unitsInUse -= n;
-		unitsReleased += n;
 		double simTime = this.getSimTime();
-		stats.addValue(simTime, unitsInUse);
-		freq.addValue(simTime, unitsInUse);
+		collectStatistics(simTime, unitsInUse);
 	}
 
 	/**
@@ -212,117 +196,5 @@ public class Resource extends AbstractResourceProvider {
 		}
 	}
 	private final ProcessTarget updateForCapacityChangeTarget = new UpdateForCapacityChangeTarget();
-
-	// *******************************************************************************************************
-	// STATISTICS
-	// *******************************************************************************************************
-
-	@Override
-	public void clearStatistics() {
-		super.clearStatistics();
-		double simTime = this.getSimTime();
-		stats.clear();
-		stats.addValue(simTime, unitsInUse);
-		freq.clear();
-		freq.addValue(simTime, unitsInUse);
-		unitsSeized = 0;
-		unitsReleased = 0;
-	}
-
-	// ******************************************************************************************************
-	// OUTPUT METHODS
-	// ******************************************************************************************************
-
-	@Output(name = "Capacity",
-	 description = "The total number of resource units that can be used.",
-	    unitType = DimensionlessUnit.class,
-	    sequence = 0)
-	public int getCapacity(double simTime) {
-		return (int) capacity.getValue().getNextSample(simTime);
-	}
-
-	@Output(name = "UnitsInUse",
-	 description = "The present number of resource units that are in use.",
-	    unitType = DimensionlessUnit.class,
-	    sequence = 1)
-	public int getUnitsInUse(double simTime) {
-		return unitsInUse;
-	}
-
-	@Output(name = "AvailableUnits",
-	 description = "The number of resource units that are not in use.",
-	    unitType = DimensionlessUnit.class,
-	    sequence = 2)
-	public int getAvailableUnits(double simTime) {
-		return getCapacity(simTime) - unitsInUse;
-	}
-
-	@Output(name = "UnitsSeized",
-	 description = "The total number of resource units that have been seized.",
-	    unitType = DimensionlessUnit.class,
-	  reportable = true,
-	    sequence = 3)
-	public int getUnitsSeized(double simTime) {
-		return unitsSeized;
-	}
-
-	@Output(name = "UnitsReleased",
-	 description = "The total number of resource units that have been released.",
-	    unitType = DimensionlessUnit.class,
-	  reportable = true,
-	    sequence = 4)
-	public int getUnitsReleased(double simTime) {
-		return unitsReleased;
-	}
-
-	@Output(name = "UnitsInUseAverage",
-	 description = "The average number of resource units that are in use.",
-	    unitType = DimensionlessUnit.class,
-	  reportable = true,
-	    sequence = 5)
-	public double getUnitsInUseAverage(double simTime) {
-		return stats.getMean(simTime);
-	}
-
-	@Output(name = "UnitsInUseStandardDeviation",
-	 description = "The standard deviation of the number of resource units that are in use.",
-	    unitType = DimensionlessUnit.class,
-	  reportable = true,
-	    sequence = 6)
-	public double getUnitsInUseStandardDeviation(double simTime) {
-		return stats.getStandardDeviation(simTime);
-	}
-
-	@Output(name = "UnitsInUseMinimum",
-	 description = "The minimum number of resource units that are in use.",
-	    unitType = DimensionlessUnit.class,
-	  reportable = true,
-	    sequence = 7)
-	public int getUnitsInUseMinimum(double simTime) {
-		return (int) stats.getMin();
-	}
-
-	@Output(name = "UnitsInUseMaximum",
-	 description = "The maximum number of resource units that are in use.",
-	    unitType = DimensionlessUnit.class,
-	  reportable = true,
-	    sequence = 8)
-	public int getUnitsInUseMaximum(double simTime) {
-		int ret = (int) stats.getMax();
-		// A unit that is seized and released immediately
-		// does not count as a non-zero maximum in use
-		if (ret == 1 && freq.getBinTime(simTime, 1) == 0.0d)
-			return 0;
-		return ret;
-	}
-
-	@Output(name = "UnitsInUseTimes",
-	 description = "The total time that the number of resource units in use was 0, 1, 2, etc.",
-	    unitType = TimeUnit.class,
-	  reportable = true,
-	    sequence = 9)
-	public double[] getUnitsInUseDistribution(double simTime) {
-		return freq.getBinTimes(simTime);
-	}
 
 }

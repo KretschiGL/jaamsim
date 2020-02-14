@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2018-2019 JaamSim Software Inc.
+ * Copyright (C) 2018-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 
 import com.jaamsim.Graphics.DisplayEntity;
+import com.jaamsim.ProcessFlow.StateUserEntity;
 import com.jaamsim.basicsim.Entity;
+import com.jaamsim.input.Output;
+import com.jaamsim.units.DimensionlessUnit;
 
 public class ResourcePool extends AbstractResourceProvider {
 
@@ -43,6 +46,28 @@ public class ResourcePool extends AbstractResourceProvider {
 		}
 	}
 
+	@Override
+	public int getCapacity(double simTime) {
+		int ret = 0;
+		for (Seizable unit : seizableList) {
+			if (unit instanceof StateUserEntity && !((StateUserEntity) unit).isAvailable())
+				continue;
+			ret++;
+		}
+		return ret;
+	}
+
+	@Override
+	public int getUnitsInUse() {
+		int ret = 0;
+		for (Seizable unit : seizableList) {
+			if (unit.getAssignment() == null)
+				continue;
+			ret++;
+		}
+		return ret;
+	}
+
 	public ArrayList<Seizable> getEligibleList(DisplayEntity ent) {
 		ArrayList<Seizable> ret = new ArrayList<>(seizableList.size());
 		for (Seizable unit : seizableList) {
@@ -60,7 +85,7 @@ public class ResourcePool extends AbstractResourceProvider {
 
 	@Override
 	public void seize(int n, DisplayEntity ent) {
-		if (isTraceFlag()) trace(1,"seize(%s, %s)", n, ent);
+		super.seize(n, ent);
 
 		// List the units that are eligible to be seized
 		ArrayList<Seizable> eligibleList = getEligibleList(ent);
@@ -78,16 +103,22 @@ public class ResourcePool extends AbstractResourceProvider {
 		for (int i = 0; i < n; i++) {
 			list.get(i).unit.seize(ent);
 		}
+
+		double simTime = getSimTime();
+		collectStatistics(simTime, getUnitsInUse());
 	}
 
 	@Override
 	public void release(int n, DisplayEntity ent) {
-		if (isTraceFlag()) trace(1,"release(%s, %s)", n, ent);
+		super.release(n, ent);
 		for (Seizable unit : seizableList) {
 			if (unit.getAssignment() != ent)
 				continue;
 			unit.release();
 		}
+
+		double simTime = getSimTime();
+		collectStatistics(simTime, getUnitsInUse());
 	}
 
 	private static class SeizableUnit implements Comparable<SeizableUnit> {
@@ -118,6 +149,43 @@ public class ResourcePool extends AbstractResourceProvider {
 		public String toString() {
 			return unit.toString();
 		}
+	}
+
+	@Output(name = "UnitsList",
+	 description = "The ResourceUnits that are members of this ResourcePool.",
+	    sequence = 1)
+	public ArrayList<Seizable> getUnitsList(double simTime) {
+		return seizableList;
+	}
+
+	@Output(name = "UnitsInUseList",
+	 description = "The present number of resource units that are in use.",
+	    unitType = DimensionlessUnit.class,
+	    sequence = 2)
+	public ArrayList<Seizable> getUnitsInUseList(double simTime) {
+		ArrayList<Seizable> ret = new ArrayList<>(seizableList.size());
+		for (Seizable unit : seizableList) {
+			if (unit.getAssignment() == null)
+				continue;
+			ret.add(unit);
+		}
+		return ret;
+	}
+
+	@Output(name = "AvailableUnitsList",
+	 description = "The number of resource units that are not in use.",
+	    unitType = DimensionlessUnit.class,
+	    sequence = 3)
+	public ArrayList<Seizable> getAvailableUnitsList(double simTime) {
+		ArrayList<Seizable> ret = new ArrayList<>(seizableList.size());
+		for (Seizable unit : seizableList) {
+			if (unit.getAssignment() != null)
+				continue;
+			if (unit instanceof StateUserEntity && !((StateUserEntity) unit).isAvailable())
+				continue;
+			ret.add(unit);
+		}
+		return ret;
 	}
 
 }

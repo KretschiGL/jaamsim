@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2002-2011 Ausenco Engineering Canada Inc.
- * Copyright (C) 2017-2019 JaamSim Software Inc.
+ * Copyright (C) 2017-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 
 import com.jaamsim.Commands.KeywordCommand;
+import com.jaamsim.DisplayModels.ColladaModel;
 import com.jaamsim.DisplayModels.DisplayModel;
-import com.jaamsim.DisplayModels.GraphModel;
 import com.jaamsim.DisplayModels.IconModel;
 import com.jaamsim.DisplayModels.ImageModel;
 import com.jaamsim.DisplayModels.PolylineModel;
@@ -185,7 +185,8 @@ public class DisplayEntity extends Entity {
 		pointsInput.setUnitType(DistanceUnit.class);
 		this.addInput(pointsInput);
 
-		curveTypeInput = new EnumInput<>(PolylineInfo.CurveType.class, "CurveType", GRAPHICS, PolylineInfo.CurveType.LINEAR);
+		curveTypeInput = new EnumInput<>(PolylineInfo.CurveType.class, "CurveType", FORMAT,
+				PolylineInfo.CurveType.LINEAR);
 		this.addInput(curveTypeInput);
 
 		regionInput = new RegionInput("Region", GRAPHICS, null);
@@ -195,9 +196,10 @@ public class DisplayEntity extends Entity {
 		this.addInput(relativeEntity);
 
 		displayModelListInput = new EntityListInput<>( DisplayModel.class, "DisplayModel", GRAPHICS, null);
+		displayModelListInput.addValidClass(ColladaModel.class);
+		displayModelListInput.addValidClass(ShapeModel.class);
+		displayModelListInput.addValidClass(ImageModel.class);
 		displayModelListInput.addInvalidClass(IconModel.class);
-		displayModelListInput.addInvalidClass(TextModel.class);
-		displayModelListInput.addInvalidClass(GraphModel.class);
 		this.addInput(displayModelListInput);
 		displayModelListInput.setUnique(false);
 
@@ -347,7 +349,7 @@ public class DisplayEntity extends Entity {
 	@Override
 	public void earlyInit() {
 		super.earlyInit();
-		if (! this.testFlag(FLAG_GENERATED)) {
+		if (!this.isGenerated()) {
 			this.resetGraphics();
 		}
 	}
@@ -853,57 +855,97 @@ public class DisplayEntity extends Entity {
 	}
 
 	public void dragged(int x, int y, Vec3d newPos) {
+
+		// Normal objects
 		KeywordIndex kw = InputAgent.formatVec3dInput(positionInput.getKeyword(), newPos, DistanceUnit.class);
 		InputAgent.apply(this, kw);
 
 		ArrayList<Vec3d> points = pointsInput.getValue();
 		if (points == null || points.isEmpty())
 			return;
+		if (!usePointsInput()) {
+			setPoints(points);
+			return;
+		}
+
+		// Polyline objects
 		Vec3d dist = new Vec3d(newPos);
 		dist.sub3(points.get(0));
 		kw = InputAgent.formatPointsInputs(pointsInput.getKeyword(), pointsInput.getValue(), dist);
 		InputAgent.apply(this, kw);
 	}
 
-	public void handleKeyPressed(int keyCode, char keyChar, boolean shift, boolean control, boolean alt) {
+	/**
+	 * Performs the specified keyboard event.
+	 * @param keyCode - newt key code
+	 * @param keyChar - alphanumeric character for the key (if applicable)
+	 * @param shift - true if the Shift key is held down
+	 * @param control - true if the Control key is held down
+	 * @param alt - true if the Alt key is held down
+	 * @return true if the key event was consumed by this entity
+	 */
+	public boolean handleKeyPressed(int keyCode, char keyChar, boolean shift, boolean control, boolean alt) {
 		if (!isMovable())
-			return;
-		Vec3d pos = getPosition();
+			return false;
 		double inc = getSimulation().getIncrementSize();
 		if (getSimulation().isSnapToGrid())
 			inc = Math.max(inc, getSimulation().getSnapGridSpacing());
+
+		Vec3d offset = new Vec3d();
 		switch (keyCode) {
 
 			case KeyEvent.VK_LEFT:
-				pos.x -= inc;
+				offset.x -= inc;
 				break;
 
 			case KeyEvent.VK_RIGHT:
-				pos.x +=inc;
+				offset.x += inc;
 				break;
 
 			case KeyEvent.VK_UP:
 				if (shift)
-					pos.z += inc;
+					offset.z += inc;
 				else
-					pos.y += inc;
+					offset.y += inc;
 				break;
 
 			case KeyEvent.VK_DOWN:
 				if (shift)
-					pos.z -= inc;
+					offset.z -= inc;
 				else
-					pos.y -= inc;
+					offset.y -= inc;
 				break;
 
 			default:
-				return;
+				return false;
 		}
+
+		// Normal object
+		Vec3d pos = getPosition();
+		pos.add3(offset);
 		if (getSimulation().isSnapToGrid())
 			pos = getSimulation().getSnapGridPosition(pos, pos, shift);
+		String posKey = positionInput.getKeyword();
+		KeywordIndex posKw = InputAgent.formatVec3dInput(posKey, pos, DistanceUnit.class);
 
-		KeywordIndex kw = InputAgent.formatVec3dInput(positionInput.getKeyword(), pos, DistanceUnit.class);
-		InputAgent.storeAndExecute(new KeywordCommand(this, kw));
+		if (!usePointsInput()) {
+			InputAgent.storeAndExecute(new KeywordCommand(this, posKw));
+			return true;
+		}
+
+		// Polyline object
+		if (getSimulation().isSnapToGrid()) {
+			Vec3d pts0 = new Vec3d(getPoints().get(0));
+			pts0.add3(offset);
+			pts0 = getSimulation().getSnapGridPosition(pts0, pts0, shift);
+			offset = new Vec3d(pts0);
+			offset.sub3(getPoints().get(0));
+		}
+		String ptsKey = pointsInput.getKeyword();
+		KeywordIndex ptsKw = InputAgent.formatPointsInputs(ptsKey, getPoints(), offset);
+
+		InputAgent.storeAndExecute(new KeywordCommand(this, posKw, ptsKw));
+		return true;
 	}
 
 	public void handleKeyReleased(int keyCode, char keyChar, boolean shift, boolean control, boolean alt) {
@@ -1088,6 +1130,41 @@ public class DisplayEntity extends Entity {
 	 */
 	public HashMap<String, Tag> getTagSet() {
 		return tagMap;
+	}
+
+	/**
+	 * Returns the location at which entities arrive at this entity, if relevant.
+	 * @return arrival location
+	 */
+	public Vec3d getSourcePoint() {
+		if (usePointsInput() && !pointsInput.getValue().isEmpty()) {
+			ArrayList<Vec3d> points = pointsInput.getValue();
+			return getGlobalPosition(points.get(points.size() - 1));
+		}
+		return getGlobalPosition();
+	}
+
+	/**
+	 * Returns the location at which entities depart from this entity, if relevant.
+	 * @return departure location
+	 */
+	public Vec3d getSinkPoint() {
+		if (usePointsInput() && !pointsInput.getValue().isEmpty()) {
+			ArrayList<Vec3d> points = pointsInput.getValue();
+			return getGlobalPosition(points.get(0));
+		}
+		return getGlobalPosition();
+	}
+
+	/**
+	 * Returns the distance from the arrival/departure location at which an entity flow arrow
+	 * begins or ends.
+	 * @return distance from the arrival/departure location
+	 */
+	public double getRadius() {
+		if (usePointsInput())
+			return 0.05d;
+		return Math.max(getSize().x, getSize().y)/2.0 + 0.05d;
 	}
 
 	////////////////////////////////////////////////////////////////////////

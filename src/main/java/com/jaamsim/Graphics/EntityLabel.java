@@ -99,17 +99,23 @@ public class EntityLabel extends TextBasics {
 	}
 
 	@Override
+	public boolean isGraphicsNominal() {
+		return true;
+	}
+
+	@Override
 	public void acceptEdits() {
+		GUIListener gui = getJaamSimModel().getGUIListener();
+		if (gui == null)
+			return;
 		try {
 			// Rename both the target entity and the label
-			InputAgent.renameEntity(targetEntity.getValue(), getText());
+			gui.renameEntity(targetEntity.getValue(), getText());
 			super.acceptEdits();
 		}
 		catch (ErrorException e) {
 			super.cancelEdits();
-			GUIListener gui = getJaamSimModel().getGUIListener();
-			if (gui != null)
-				gui.invokeErrorDialogBox("Input Error", e.getMessage());
+			gui.invokeErrorDialogBox("Input Error", e.getMessage());
 		}
 	}
 
@@ -200,7 +206,7 @@ public class EntityLabel extends TextBasics {
 
 	public static boolean canLabel(DisplayEntity ent) {
 		return !(ent instanceof TextEntity) && !(ent instanceof OverlayEntity)
-				&& !ent.testFlag(Entity.FLAG_GENERATED)
+				&& !ent.isGenerated()
 				&& !ent.getName().equals("XY-Grid") && !ent.getName().equals("XYZ-Axis");
 	}
 

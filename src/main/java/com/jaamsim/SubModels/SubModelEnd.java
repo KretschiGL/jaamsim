@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2018-2019 JaamSim Software Inc.
+ * Copyright (C) 2018-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,7 @@ import com.jaamsim.Graphics.LinkDisplayable;
 import com.jaamsim.Graphics.OverlayEntity;
 import com.jaamsim.Graphics.TextBasics;
 import com.jaamsim.ProcessFlow.Linkable;
-import com.jaamsim.basicsim.Entity;
 import com.jaamsim.input.Keyword;
-import com.jaamsim.math.Vec3d;
 
 public class SubModelEnd extends DisplayEntity implements Linkable, LinkDisplayable {
 
@@ -71,26 +69,12 @@ public class SubModelEnd extends DisplayEntity implements Linkable, LinkDisplaya
 
 	// LinkDisplayable
 	@Override
-	public ArrayList<Entity> getDestinationEntities() {
+	public ArrayList<DisplayEntity> getDestinationEntities() {
 		return new ArrayList<>();	}
 
 	@Override
-	public ArrayList<Entity> getSourceEntities() {
+	public ArrayList<DisplayEntity> getSourceEntities() {
 		return new ArrayList<>();
-	}
-
-	@Override
-	public Vec3d getSourcePoint() {
-		return getGlobalPosition();
-	}
-	@Override
-	public Vec3d getSinkPoint() {
-		return getGlobalPosition();
-	}
-
-	@Override
-	public double getRadius() {
-		return getSize().mag2()/2.0;
 	}
 
 }

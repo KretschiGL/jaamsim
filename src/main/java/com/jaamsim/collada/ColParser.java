@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2012 Ausenco Engineering Canada Inc.
- * Copyright (C) 2015 JaamSim Software Inc.
+ * Copyright (C) 2015-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,9 +72,12 @@ public class ColParser {
 		try {
 			ColParser colParser = new ColParser(asset.toURL());
 
+			MeshData finalData = colParser.getData();
+			finalData.setSource(asset.toString());
+
 			colParser.processContent();
 
-			return colParser.getData();
+			return finalData;
 
 		} catch (Exception e) {
 			LogBox.renderLogException(e);

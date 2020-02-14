@@ -17,25 +17,22 @@
 package com.jaamsim.SubModels;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 
 import com.jaamsim.Graphics.DisplayEntity;
 import com.jaamsim.ProcessFlow.LinkedComponent;
 import com.jaamsim.Graphics.Region;
 import com.jaamsim.SubModels.SubModelEnd;
 import com.jaamsim.SubModels.SubModelStart;
+import com.jaamsim.basicsim.Entity;
 import com.jaamsim.basicsim.ErrorException;
 import com.jaamsim.basicsim.JaamSimModel;
-import com.jaamsim.input.ExpError;
-import com.jaamsim.input.ExpEvaluator;
-import com.jaamsim.input.ExpParser;
 import com.jaamsim.input.Input;
 import com.jaamsim.input.BooleanInput;
 import com.jaamsim.input.InputAgent;
 import com.jaamsim.input.Keyword;
-import com.jaamsim.input.Output;
 import com.jaamsim.input.ValueInput;
 import com.jaamsim.input.Vec3dInput;
-import com.jaamsim.input.ExpParser.Expression;
 import com.jaamsim.math.Vec3d;
 import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.DistanceUnit;
@@ -60,7 +57,7 @@ public abstract class CompoundEntity extends LinkedComponent {
 	         exampleList = {"0.0 -2.0  0.0 m"})
 	protected final Vec3dInput regionPosition;
 
-	protected ArrayList<DisplayEntity> componentList;
+	private final HashMap<String, Entity> namedChildren = new HashMap<>();
 	private SubModelStart smStart;
 	private SubModelRegion smRegion;
 
@@ -84,14 +81,16 @@ public abstract class CompoundEntity extends LinkedComponent {
 		this.addInput(regionPosition);
 	}
 
-	public CompoundEntity() {
-		componentList = new ArrayList<>();
-	}
+	public CompoundEntity() {}
 
 	@Override
 	public void postDefine() {
 		super.postDefine();
-		updateRegion();
+
+		// Create the region
+		JaamSimModel simModel = getJaamSimModel();
+		smRegion = InputAgent.generateEntityWithName(simModel, SubModelRegion.class, "Region", this, true, true);
+		smRegion.setSubModel(this);
 	}
 
 	@Override
@@ -131,7 +130,7 @@ public abstract class CompoundEntity extends LinkedComponent {
 		super.earlyInit();
 
 		// Find the first component in the sub-model
-		for (DisplayEntity comp : componentList) {
+		for (Entity comp : getChildren()) {
 			if (comp instanceof SubModelStart) {
 				smStart = (SubModelStart)comp;
 				break;
@@ -139,7 +138,7 @@ public abstract class CompoundEntity extends LinkedComponent {
 		}
 
 		// Find the last component in the sub-model
-		for (DisplayEntity comp : componentList) {
+		for (Entity comp : getChildren()) {
 			if (comp instanceof SubModelEnd) {
 				((SubModelEnd)comp).setSubModel(this);
 			}
@@ -147,21 +146,45 @@ public abstract class CompoundEntity extends LinkedComponent {
 	}
 
 	@Override
-	public void kill() {
-		for (DisplayEntity comp : componentList) {
-			comp.kill();
+	public Entity getChild(String name) {
+		synchronized (namedChildren) {
+			return namedChildren.get(name);
 		}
-		componentList.clear();
-		smStart = null;
-		smRegion.kill();
-		smRegion = null;
-		super.kill();
 	}
 
 	@Override
-	public void restore(String name) {
-		super.restore(name);
-		postDefine();
+	public void addChild(Entity ent) {
+		synchronized (namedChildren) {
+			namedChildren.put(ent.getLocalName(), ent);
+		}
+	}
+
+	@Override
+	public void removeChild(Entity ent) {
+		synchronized (namedChildren) {
+			if (ent != namedChildren.remove(ent.getLocalName()))
+				throw new ErrorException("Named Children Internal Consistency error: %s", ent);
+		}
+	}
+
+	@Override
+	public void renameChild(Entity ent, String oldName, String newName) {
+		synchronized (namedChildren) {
+			if (namedChildren.get(newName) != null)
+				throw new ErrorException("Child name: %s is already in use.", newName);
+
+			if (namedChildren.remove(oldName) != ent)
+				throw new ErrorException("Named Children Internal Consistency error");
+
+			namedChildren.put(newName, ent);
+		}
+	}
+
+	@Override
+	public ArrayList<Entity> getChildren() {
+		synchronized (namedChildren) {
+			return new ArrayList<>(namedChildren.values());
+		}
 	}
 
 	public void setDefaultRegionScale(double scale) {
@@ -179,32 +202,6 @@ public abstract class CompoundEntity extends LinkedComponent {
 		smRegion.setPosition(pos);
 	}
 
-	public void updateRegion() {
-		JaamSimModel simModel = getJaamSimModel();
-		if (smRegion == null) {
-			String name = getComponentName("Region");
-			smRegion = InputAgent.generateEntityWithName(simModel, SubModelRegion.class, name, true, true);
-			smRegion.setSubModel(this);
-		}
-	}
-
-	public void setComponentList(ArrayList<DisplayEntity> list) {
-		ArrayList<DisplayEntity> oldList = new ArrayList<>(componentList);
-		componentList = new ArrayList<>(list);
-
-		// Place the components in the sub-model region
-		for (DisplayEntity comp : componentList) {
-			InputAgent.applyArgs(comp, "Region", smRegion.getName());
-		}
-
-		// Set the outputs for the sub-model
-		updateOutputs(oldList, componentList);
-	}
-
-	public ArrayList<DisplayEntity> getComponentList() {
-		return componentList;
-	}
-
 	public Region getSubModelRegion() {
 		return smRegion;
 	}
@@ -214,111 +211,26 @@ public abstract class CompoundEntity extends LinkedComponent {
 	 * @param bool - if true, the components are displayed; if false, they are hidden.
 	 */
 	public void showComponents(boolean bool) {
-		InputAgent.applyBoolean(smRegion, "Show", bool);
-		for (DisplayEntity comp : componentList) {
+		for (Entity ent : getChildren()) {
+			if (!(ent instanceof DisplayEntity))
+				continue;
+			DisplayEntity comp = (DisplayEntity) ent;
 			InputAgent.applyBoolean(comp, "Show", bool);
 		}
 	}
 
 	public void showTemporaryComponents(boolean bool) {
 		bool = bool || getShowComponents();
-		smRegion.setShow(bool);
-		for (DisplayEntity comp : componentList) {
+		for (Entity ent : getChildren()) {
+			if (!(ent instanceof DisplayEntity))
+				continue;
+			DisplayEntity comp = (DisplayEntity) ent;
 			comp.setShow(bool);
 		}
 	}
 
 	public boolean getShowComponents() {
 		return showComponents.getValue();
-	}
-
-	@Override
-	public void setName(String newName) {
-		super.setName(newName);
-		renameComponents(newName);
-	}
-
-	public void renameComponents(String newName) {
-		if (smRegion != null) {
-			String name = getComponentName(newName, smRegion.getName());
-			smRegion.setName(name);
-		}
-		for (DisplayEntity comp : componentList) {
-			if (comp == null)
-				continue;
-			String name = getComponentName(newName, comp.getName());
-			comp.setName(name);
-		}
-	}
-
-	public void updateOutputs(ArrayList<DisplayEntity> oldCompList, ArrayList<DisplayEntity> newCompList) {
-
-		// Do nothing if the components are unchanged
-		if (newCompList.equals(oldCompList))
-			return;
-
-		// Delete the old outputs
-		for (DisplayEntity comp : oldCompList) {
-			if (comp == null || comp.getName() == null)
-				continue;
-			String outName = getComponentRootName(comp.getName());
-			removeCustomOutput(outName);
-		}
-
-		// Build the new outputs
-		for (int i = 0; i < newCompList.size(); i++) {
-			DisplayEntity comp = newCompList.get(i);
-			if (comp instanceof SubModelStart || comp instanceof SubModelEnd)
-				continue;
-
-			// Build a string for the output expression
-			StringBuilder sb = new StringBuilder();
-			sb.append("this.ComponentList(").append(i + 1).append(")");
-			String expString = sb.toString();
-
-			// Parse the expression string and add the output
-			String outName = getComponentRootName(comp.getName());
-			try {
-				ExpEvaluator.EntityParseContext parseContext = ExpEvaluator.getParseContext(this, expString);
-				Expression exp = ExpParser.parseExpression(parseContext, expString);
-				addCustomOutput(outName, exp, DimensionlessUnit.class);
-			}
-			catch (ExpError e) {
-				throw new ErrorException("Cannot create output '%s': " + e.getMessage(), outName);
-			}
-		}
-	}
-
-	/**
-	 * Returns the component name without the sub-model's prefix.
-	 * @param name - component name
-	 * @return name with the prefix removed
-	 */
-	protected static String getComponentRootName(String name) {
-		int percentIndex = name.indexOf('%', 1);
-		return name.substring(percentIndex + 1);
-	}
-
-	/**
-	 * Returns the name for a component entity based on the name of its sub-model.
-	 * @param name - name of the sub-model.
-	 * @param compName - present name of the component.
-	 * @return new name for the component.
-	 */
-	protected static String getComponentName(String name, String compName) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("%").append(name).append("%");
-		sb.append(getComponentRootName(compName));
-		return sb.toString();
-	}
-
-	protected String getComponentName(String name) {
-		return getComponentName(this.getName(), name);
-	}
-
-	public boolean isComponentName(String name) {
-		String compName = getComponentName(name);
-		return name.equals(compName);
 	}
 
 	@Override
@@ -329,13 +241,6 @@ public abstract class CompoundEntity extends LinkedComponent {
 
 	public void addReturnedEntity(DisplayEntity ent) {
 		sendToNextComponent(ent);
-	}
-
-	@Output(name = "ComponentList",
-	 description = "The objects contained in the sub-model.",
-	    sequence = 0)
-	public ArrayList<DisplayEntity> getComponentList(double simTime) {
-		return componentList;
 	}
 
 }

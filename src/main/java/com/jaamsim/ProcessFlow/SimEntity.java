@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2014 Ausenco Engineering Canada Inc.
- * Copyright (C) 2016 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.jaamsim.basicsim.Entity;
 import com.jaamsim.input.Keyword;
 import com.jaamsim.input.StringInput;
 import com.jaamsim.input.StringListInput;
-import com.jaamsim.math.Vec3d;
 import com.jaamsim.states.StateEntity;
 
 public class SimEntity extends StateEntity implements LinkDisplayable {
@@ -69,7 +68,7 @@ public class SimEntity extends StateEntity implements LinkDisplayable {
 
 	@Override
 	public void collectInitializationStats() {
-		if (testFlag(Entity.FLAG_GENERATED))
+		if (isGenerated())
 			return;
 		super.collectInitializationStats();
 	}
@@ -81,38 +80,22 @@ public class SimEntity extends StateEntity implements LinkDisplayable {
 
 	@Override
 	public void linkTo(DisplayEntity nextEnt) {
-		if (!(nextEnt instanceof EntityGenerator)) {
+		if (!(nextEnt instanceof EntityGen))
 			return;
-		}
 
-		EntityGenerator gen = (EntityGenerator)nextEnt;
+		EntityGen gen = (EntityGen) nextEnt;
 		gen.setPrototypeEntity(this);
 	}
 
 	// LinkDisplayable
 	@Override
-	public ArrayList<Entity> getDestinationEntities() {
+	public ArrayList<DisplayEntity> getDestinationEntities() {
 		return new ArrayList<>();
 	}
 
 	@Override
-	public ArrayList<Entity> getSourceEntities() {
+	public ArrayList<DisplayEntity> getSourceEntities() {
 		return new ArrayList<>();
-	}
-
-	@Override
-	public Vec3d getSourcePoint() {
-		return getGlobalPosition();
-	}
-
-	@Override
-	public Vec3d getSinkPoint() {
-		return getGlobalPosition();
-	}
-
-	@Override
-	public double getRadius() {
-		return getSize().mag2()/2.0;
 	}
 
 }

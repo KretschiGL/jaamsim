@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2002-2011 Ausenco Engineering Canada Inc.
- * Copyright (C) 2016-2019 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ import java.net.URL;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -96,6 +97,7 @@ import com.jaamsim.Commands.DefineCommand;
 import com.jaamsim.Commands.DefineViewCommand;
 import com.jaamsim.Commands.DeleteCommand;
 import com.jaamsim.Commands.KeywordCommand;
+import com.jaamsim.Commands.RenameCommand;
 import com.jaamsim.DisplayModels.TextModel;
 import com.jaamsim.Graphics.BillboardText;
 import com.jaamsim.Graphics.DisplayEntity;
@@ -189,6 +191,12 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 	private JButton pasteButton;
 	private JToggleButton find;
 
+	private JTextField dispModel;
+	private JButton modelSelector;
+	private JButton editDmButton;
+
+	private JButton clearButton;
+
 	private Entity selectedEntity;
 	private JToggleButton alignLeft;
 	private JToggleButton alignCentre;
@@ -196,6 +204,7 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 
 	private JToggleButton bold;
 	private JToggleButton italic;
+	private JTextField font;
 	private JButton fontSelector;
 	private JTextField textHeight;
 	private JButton largerText;
@@ -1074,9 +1083,20 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 		buttonBar.add(Box.createRigidArea(gapDim));
 		addEntityFinderButton(buttonBar, noMargin);
 
+		// DisplayModel field and button
+		buttonBar.addSeparator(separatorDim);
+		addDisplayModelSelector(buttonBar, noMargin);
+		buttonBar.add(Box.createRigidArea(gapDim));
+		addEditDisplayModelButton(buttonBar, noMargin);
+
+		// Clear formatting button
+		buttonBar.add(Box.createRigidArea(gapDim));
+		addClearFormattingButton(buttonBar, noMargin);
+
 		// Font selector and text height field
 		buttonBar.addSeparator(separatorDim);
-		addFontSelector(buttonBar, smallMargin);
+		addFontSelector(buttonBar, noMargin);
+		buttonBar.add(Box.createRigidArea(gapDim));
 		addTextHeightField(buttonBar, noMargin);
 
 		// Larger and smaller text height buttons
@@ -1551,6 +1571,162 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 		buttonBar.add( find );
 	}
 
+	private void addDisplayModelSelector(JToolBar buttonBar, Insets margin) {
+
+		dispModel = new JTextField("");
+		dispModel.setEditable(false);
+		dispModel.setHorizontalAlignment(JTextField.CENTER);
+		dispModel.setPreferredSize(new Dimension(120, fileSave.getPreferredSize().height));
+		dispModel.setToolTipText(formatToolTip("DisplayModel", "Sets the default appearance of the entity. "
+				+ "A DisplayModel is analogous to a text style in a word processor."));
+		buttonBar.add(dispModel);
+
+		modelSelector = new JButton(new ImageIcon(
+				GUIFrame.class.getResource("/resources/images/dropdown.png")));
+		modelSelector.setMargin(margin);
+		modelSelector.setFocusPainted(false);
+		modelSelector.setRequestFocusEnabled(false);
+		modelSelector.addActionListener(new ActionListener() {
+
+			@Override
+			public void actionPerformed( ActionEvent event ) {
+				if (!(selectedEntity instanceof DisplayEntity))
+					return;
+				DisplayEntity dispEnt = (DisplayEntity) selectedEntity;
+				if (!dispEnt.isGraphicsNominal() || dispEnt.getDisplayModelList().size() != 1)
+					return;
+				final String presentModelName = dispEnt.getDisplayModelList().get(0).getName();
+				ScrollablePopupMenu menu = new ScrollablePopupMenu();
+
+				ActionListener actionListener = new ActionListener() {
+					@Override
+					public void actionPerformed( ActionEvent event ) {
+						if (!(event.getSource() instanceof JMenuItem))
+							return;
+						JMenuItem item = (JMenuItem) event.getSource();
+						String modelName = item.getText();
+						if (!modelName.equals(dispEnt.getDisplayModelList().get(0).getName())) {
+							dispModel.setText(modelName);
+							KeywordIndex kw = InputAgent.formatArgs("DisplayModel", modelName);
+							InputAgent.storeAndExecute(new KeywordCommand(dispEnt, kw));
+						}
+						controlStartResume.requestFocusInWindow();
+					}
+				};
+
+				MouseListener mouseListener = new MouseListener() {
+					@Override
+					public void mouseClicked(MouseEvent e) {}
+					@Override
+					public void mousePressed(MouseEvent e) {}
+					@Override
+					public void mouseReleased(MouseEvent e) {}
+					@Override
+					public void mouseEntered(MouseEvent e) {
+						if (!(e.getSource() instanceof JMenuItem))
+							return;
+						JMenuItem item = (JMenuItem) e.getSource();
+						String modelName = item.getText();
+						if (!modelName.equals(dispEnt.getDisplayModelList().get(0).getName())) {
+							dispModel.setText(modelName);
+							KeywordIndex kw = InputAgent.formatArgs("DisplayModel", modelName);
+							InputAgent.storeAndExecute(new KeywordCommand(dispEnt, kw));
+						}
+					}
+					@Override
+					public void mouseExited(MouseEvent e) {
+						if (!presentModelName.equals(dispEnt.getDisplayModelList().get(0).getName())) {
+							dispModel.setText(presentModelName);
+							KeywordIndex kw = InputAgent.formatArgs("DisplayModel", presentModelName);
+							InputAgent.storeAndExecute(new KeywordCommand(dispEnt, kw));
+						}
+					}
+				};
+
+				// All valid display models
+				JMenuItem selectedItem = null;
+				int selectedIndex = -1;
+				int ind = 0;
+				Input<?> in = dispEnt.getInput("DisplayModel");
+				for (String modelName : in.getValidOptions(selectedEntity)) {
+					JMenuItem item = new JMenuItem(modelName);
+					if (selectedItem == null && modelName.equals(dispEnt.getDisplayModelList().get(0).getName())) {
+						selectedItem = item;
+						selectedIndex = ind;
+					}
+					ind++;
+					item.addActionListener(actionListener);
+					item.addMouseListener(mouseListener);
+					menu.add(item);
+				}
+
+				menu.show(dispModel, 0, dispModel.getPreferredSize().height);
+				if (selectedItem != null) {
+					menu.ensureIndexIsVisible(selectedIndex);
+					selectedItem.setArmed(true);
+				}
+			}
+		});
+
+		buttonBar.add(modelSelector);
+	}
+
+	private void addEditDisplayModelButton(JToolBar buttonBar, Insets margin) {
+		editDmButton = new JButton(new ImageIcon(
+				GUIFrame.class.getResource("/resources/images/Edit-16.png")));
+		editDmButton.setToolTipText(formatToolTip("Edit DisplayModel",
+				"Selects the present DisplayModel so that its inputs can be edited."));
+		editDmButton.setMargin(margin);
+		editDmButton.setFocusPainted(false);
+		editDmButton.setRequestFocusEnabled(false);
+		editDmButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed( ActionEvent event ) {
+				if (!(selectedEntity instanceof DisplayEntity))
+					return;
+				DisplayEntity dEnt = (DisplayEntity) selectedEntity;
+				if (dEnt.getDisplayModelList().size() != 1)
+					return;
+				FrameBox.setSelectedEntity(dEnt.getDisplayModelList().get(0), false);
+				controlStartResume.requestFocusInWindow();
+			}
+		});
+		buttonBar.add( editDmButton );
+	}
+
+	private void addClearFormattingButton(JToolBar buttonBar, Insets margin) {
+		clearButton = new JButton(new ImageIcon(
+				GUIFrame.class.getResource("/resources/images/Clear-16.png")));
+		clearButton.setToolTipText(formatToolTip("Clear Formatting",
+				"Resets the format inputs for the selected Entity or DisplayModel to their default "
+				+ "values."));
+		clearButton.setMargin(margin);
+		clearButton.setFocusPainted(false);
+		clearButton.setRequestFocusEnabled(false);
+		clearButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed( ActionEvent event ) {
+				if (selectedEntity == null)
+					return;
+				ArrayList<KeywordIndex> kwList = new ArrayList<>();
+				for (Input<?> in : selectedEntity.getEditableInputs()) {
+					String cat = in.getCategory();
+					if (in.isDefault() || !cat.equals(Entity.FORMAT) && !cat.equals(Entity.FONT))
+						continue;
+					KeywordIndex kw = InputAgent.formatArgs(in.getKeyword());
+					kwList.add(kw);
+				}
+				if (kwList.isEmpty())
+					return;
+				KeywordIndex[] kws = new KeywordIndex[kwList.size()];
+				kwList.toArray(kws);
+				InputAgent.storeAndExecute(new KeywordCommand(selectedEntity, kws));
+				controlStartResume.requestFocusInWindow();
+			}
+		});
+		buttonBar.add( clearButton );
+	}
+
 	private void addTextAlignmentButtons(JToolBar buttonBar, Insets margin) {
 
 		ActionListener alignListener = new ActionListener() {
@@ -1662,12 +1838,18 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 
 	private void addFontSelector(JToolBar buttonBar, Insets margin) {
 
-		fontSelector = new JButton("");
+		font = new JTextField("");
+		font.setEditable(false);
+		font.setHorizontalAlignment(JTextField.CENTER);
+		font.setPreferredSize(new Dimension(120, fileSave.getPreferredSize().height));
+		font.setToolTipText(formatToolTip("Font", "Sets the font for the text."));
+		buttonBar.add(font);
+
+		fontSelector = new JButton(new ImageIcon(
+				GUIFrame.class.getResource("/resources/images/dropdown.png")));
 		fontSelector.setMargin(margin);
 		fontSelector.setFocusPainted(false);
 		fontSelector.setRequestFocusEnabled(false);
-		fontSelector.setPreferredSize(new Dimension(100, fileSave.getPreferredSize().height));
-		fontSelector.setToolTipText(formatToolTip("Font", "Sets the font for the text."));
 		fontSelector.addActionListener(new ActionListener() {
 
 			@Override
@@ -1686,6 +1868,7 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 						JMenuItem item = (JMenuItem) event.getSource();
 						String fontName = item.getText();
 						if (!fontName.equals(textEnt.getFontName())) {
+							font.setText(fontName);
 							String name = Parser.addQuotesIfNeeded(fontName);
 							KeywordIndex kw = InputAgent.formatInput("FontName", name);
 							InputAgent.storeAndExecute(new KeywordCommand((Entity)textEnt, kw));
@@ -1708,6 +1891,7 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 						JMenuItem item = (JMenuItem) e.getSource();
 						String fontName = item.getText();
 						if (!fontName.equals(textEnt.getFontName())) {
+							font.setText(fontName);
 							String name = Parser.addQuotesIfNeeded(fontName);
 							KeywordIndex kw = InputAgent.formatInput("FontName", name);
 							InputAgent.storeAndExecute(new KeywordCommand((Entity)textEnt, kw));
@@ -1716,6 +1900,7 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 					@Override
 					public void mouseExited(MouseEvent e) {
 						if (!presentFontName.equals(textEnt.getFontName())) {
+							font.setText(presentFontName);
 							String name = Parser.addQuotesIfNeeded(presentFontName);
 							KeywordIndex kw = InputAgent.formatInput("FontName", name);
 							InputAgent.storeAndExecute(new KeywordCommand((Entity)textEnt, kw));
@@ -1748,7 +1933,7 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 					fontMenu.add(item);
 				}
 
-				fontMenu.show(fontSelector, 0, fontSelector.getPreferredSize().height);
+				fontMenu.show(font, 0, font.getPreferredSize().height);
 				if (selectedItem != null) {
 					fontMenu.ensureIndexIsVisible(selectedIndex);
 					selectedItem.setArmed(true);
@@ -1781,7 +1966,7 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 
 		textHeight.setMaximumSize(textHeight.getPreferredSize());
 		textHeight.setPreferredSize(new Dimension(textHeight.getPreferredSize().width,
-				fontSelector.getPreferredSize().height));
+				fileSave.getPreferredSize().height));
 
 		textHeight.setHorizontalAlignment(JTextField.RIGHT);
 		textHeight.setToolTipText(formatToolTip("Text Height",
@@ -2020,7 +2205,15 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 					offset.z -= delta;
 				}
 
+				// Normal object
 				KeywordIndex posKw = InputAgent.formatVec3dInput("Position", pos, DistanceUnit.class);
+				if (!dispEnt.usePointsInput()) {
+					InputAgent.storeAndExecute(new KeywordCommand(dispEnt, posKw));
+					controlStartResume.requestFocusInWindow();
+					return;
+				}
+
+				// Polyline object
 				KeywordIndex ptsKw = InputAgent.formatPointsInputs("Points", points, offset);
 				InputAgent.storeAndExecute(new KeywordCommand(dispEnt, posKw, ptsKw));
 				controlStartResume.requestFocusInWindow();
@@ -3279,19 +3472,62 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 		}
 	}
 
+	/**
+	 * Assigns a new name to the given entity.
+	 * @param ent - entity to be renamed
+	 * @param newName - new absolute name for the entity
+	 */
+	@Override
+	public void renameEntity(Entity ent, String newName) {
+
+		// If the name has not changed, do nothing
+		if (ent.getName().equals(newName))
+			return;
+
+		// Check that the entity was defined AFTER the RecordEdits command
+		if (!ent.isAdded())
+			throw new ErrorException("Cannot rename an entity that was defined before the RecordEdits command.");
+
+		// Get the new local name
+		String localName = newName;
+		if (newName.contains(".")) {
+			String[] names = newName.split("\\.");
+			localName = names[names.length - 1];
+			names = Arrays.copyOf(names, names.length - 1);
+			Entity parent = sim.getEntityFromNames(names);
+			if (parent != ent.getParent())
+				throw new ErrorException("Cannot rename the entity's parent");
+		}
+
+		// Check that the new name is valid
+		if (!InputAgent.isValidName(localName))
+			throw new ErrorException(InputAgent.INP_ERR_BADNAME, localName);
+
+		// Rename the entity
+		InputAgent.storeAndExecute(new RenameCommand(ent, newName));
+	}
+
 	@Override
 	public void deleteEntity(Entity ent) {
 
-		if (ent.testFlag(Entity.FLAG_GENERATED))
+		if (ent.isGenerated())
 			throw new ErrorException("Cannot delete an entity that was generated by a simulation "
 					+ "object.");
 
-		if (!ent.testFlag(Entity.FLAG_ADDED))
+		if (!ent.isAdded())
 			throw new ErrorException("Cannot delete an entity that was defined prior to "
 					+ "RecordEdits in the input file.");
 
 		if (ent instanceof DisplayEntity && !((DisplayEntity) ent).isMovable())
 			throw new ErrorException("Cannot delete an entity that is not movable.");
+
+		// Delete any child entities
+		for (Entity child : ent.getChildren()) {
+			if (child.isGenerated() || child instanceof EntityLabel)
+				child.kill();
+			else
+				deleteEntity(child);
+		}
 
 		// Region
 		if (ent instanceof Region) {
@@ -3517,6 +3753,8 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 
 	private void updateFormatButtons(Entity ent) {
 		updateEditButtons(ent);
+		updateDisplayModelButtons(ent);
+		updateClearFormattingButton(ent);
 		updateTextButtons(ent);
 		updateZButtons(ent);
 		updateLineButtons(ent);
@@ -3530,39 +3768,81 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 		deleteMenuItem.setEnabled(bool);
 	}
 
+	public void updateDisplayModelButtons(Entity ent) {
+		boolean bool = ent instanceof DisplayEntity
+				&& ((DisplayEntity)ent).isGraphicsNominal()
+				&& ((DisplayEntity)ent).getDisplayModelList().size() == 1;
+
+		dispModel.setEnabled(bool);
+		modelSelector.setEnabled(bool);
+		editDmButton.setEnabled(bool);
+		if (!bool) {
+			dispModel.setText("");
+			return;
+		}
+
+		DisplayEntity dispEnt = (DisplayEntity) ent;
+		String name = dispEnt.getDisplayModelList().get(0).getName();
+		if (!dispModel.getText().equals(name))
+			dispModel.setText(name);
+	}
+
+	public void updateClearFormattingButton(Entity ent) {
+		if (ent == null) {
+			clearButton.setEnabled(false);
+			return;
+		}
+		boolean bool = false;
+		for (Input<?> in : ent.getEditableInputs()) {
+			String cat = in.getCategory();
+			if (!cat.equals(Entity.FORMAT) && !cat.equals(Entity.FONT))
+				continue;
+			if (!in.isDefault()) {
+				bool = true;
+				break;
+			}
+		}
+		clearButton.setEnabled(bool);
+	}
+
 	private void updateTextButtons(Entity ent) {
 		boolean bool = ent instanceof TextEntity;
 
-		boolean isAlignable = bool && !(ent instanceof OverlayText)
-				&& !(ent instanceof BillboardText);
+		boolean isAlignable = bool && ent instanceof DisplayEntity
+				&& !(ent instanceof OverlayText) && !(ent instanceof BillboardText);
 		alignLeft.setEnabled(isAlignable);
 		alignCentre.setEnabled(isAlignable);
 		alignRight.setEnabled(isAlignable);
 
 		bold.setEnabled(bool);
 		italic.setEnabled(bool);
+		font.setEnabled(bool);
 		fontSelector.setEnabled(bool);
 		textHeight.setEnabled(bool);
 		largerText.setEnabled(bool);
 		smallerText.setEnabled(bool);
 		fontColour.setEnabled(bool);
 		if (!bool) {
-			fontSelector.setText("-");
+			font.setText("");
 			textHeight.setText(null);
 			colourIcon.setFillColor(Color.LIGHT_GRAY);
 			colourIcon.setOutlineColor(Color.LIGHT_GRAY);
 			return;
 		}
 
-		TextEntity textEnt = (TextEntity) ent;
-		int val = (int) Math.signum(((DisplayEntity) textEnt).getAlignment().x);
-		alignLeft.setSelected(val == -1);
-		alignCentre.setSelected(val == 0);
-		alignRight.setSelected(val == 1);
+		if (isAlignable) {
+			int val = (int) Math.signum(((DisplayEntity) ent).getAlignment().x);
+			alignLeft.setSelected(val == -1);
+			alignCentre.setSelected(val == 0);
+			alignRight.setSelected(val == 1);
+		}
 
+		TextEntity textEnt = (TextEntity) ent;
 		bold.setSelected(textEnt.isBold());
 		italic.setSelected(textEnt.isItalic());
-		fontSelector.setText(textEnt.getFontName());
+		String fontName = textEnt.getFontName();
+		if (!font.getText().equals(fontName))
+			font.setText(fontName);
 		updateTextHeight(textEnt.getTextHeightString());
 
 		Color4d col = textEnt.getFontColor();
@@ -4532,9 +4812,12 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 					y = olEnt.getScreenPosition().get(1) + 10;
 				}
 				DisplayEntity selectedDispEnt = (DisplayEntity) selectedEntity;
-				Vec3d pos = selectedDispEnt.getPosition();
+				Vec3d pos = selectedDispEnt.getGlobalPosition();
 				pos.x += 0.5d * selectedDispEnt.getSize().x;
 				pos.y -= 0.5d * selectedDispEnt.getSize().y;
+				pos = dEnt.getLocalPosition(pos);
+				if (sim.getSimulation().isSnapToGrid())
+					pos = sim.getSimulation().getSnapGridPosition(pos);
 				try {
 					dEnt.dragged(x, y, pos);
 				}
@@ -4546,8 +4829,47 @@ public class GUIFrame extends OSFixJFrame implements EventTimeListener, GUIListe
 				EntityLabel.showTemporaryLabel(dEnt, true);
 		}
 
+		// Copy the children
+		copyChildren(ent, copiedEnt);
+
 		// Select the new entity
 		FrameBox.setSelectedEntity(copiedEnt, false);
+	}
+
+	public void copyChildren(Entity parent0, Entity parent1) {
+		for (Entity child : parent0.getChildren()) {
+			if (child.isGenerated() || child instanceof EntityLabel)
+				continue;
+
+			// Construct the new child's name
+			String name = child.getLocalName();
+			name = parent1.getName() + "." + name;
+
+			// Create the new child and copy the inputs
+			InputAgent.storeAndExecute(new DefineCommand(sim, child.getClass(), name));
+			Entity copiedChild = sim.getNamedEntity(name);
+			copiedChild.copyInputs(child);
+
+			if (child instanceof DisplayEntity) {
+
+				// Set the region
+				if (parent1 instanceof CompoundEntity) {
+					Region region = ((CompoundEntity) parent1).getSubModelRegion();
+					InputAgent.applyArgs(copiedChild, "Region", region.getName());
+				}
+
+				// Add a label if necessary
+				EntityLabel label = EntityLabel.getLabel((DisplayEntity) child);
+				if (label != null) {
+					EntityLabel newLabel = EntityLabel.createLabel((DisplayEntity) copiedChild);
+					InputAgent.applyBoolean(newLabel, "Show", label.getShowInput());
+					newLabel.setShow(label.getShow());
+				}
+			}
+
+			// Copy the child's children
+			copyChildren(child, copiedChild);
+		}
 	}
 
 	public void invokeNew() {

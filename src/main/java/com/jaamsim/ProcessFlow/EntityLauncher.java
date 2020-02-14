@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2017 JaamSim Software Inc.
+ * Copyright (C) 2017-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,9 +31,8 @@ import com.jaamsim.input.InterfaceEntityInput;
 import com.jaamsim.input.Keyword;
 import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.input.StringInput;
-import com.jaamsim.math.Vec3d;
 
-public class EntityLauncher extends GameEntity implements LinkDisplayable {
+public class EntityLauncher extends GameEntity implements LinkDisplayable, EntityGen {
 
 	@Keyword(description = "The prototype for entities to be generated. "
 	                     + "The generated entities will be copies of this entity.",
@@ -96,6 +95,12 @@ public class EntityLauncher extends GameEntity implements LinkDisplayable {
 	}
 
 	@Override
+	public void setPrototypeEntity(DisplayEntity proto) {
+		KeywordIndex kw = InputAgent.formatArgs(prototypeEntity.getKeyword(), proto.getName());
+		InputAgent.storeAndExecute(new KeywordCommand(this, kw));
+	}
+
+	@Override
 	public void linkTo(DisplayEntity nextEnt) {
 		if (nextComponent.getHidden() || !(nextEnt instanceof Linkable)
 				|| nextEnt instanceof EntityGenerator) {
@@ -110,32 +115,25 @@ public class EntityLauncher extends GameEntity implements LinkDisplayable {
 
 	// LinkDisplayable
 	@Override
-	public ArrayList<Entity> getDestinationEntities() {
-		ArrayList<Entity> ret = new ArrayList<>();
+	public ArrayList<DisplayEntity> getDestinationEntities() {
+		ArrayList<DisplayEntity> ret = new ArrayList<>();
 		Linkable l = nextComponent.getValue();
-		if (l != null && (l instanceof Entity)) {
-			ret.add((Entity)l);
+		if (l != null && (l instanceof DisplayEntity)) {
+			ret.add((DisplayEntity)l);
 		}
 		return ret;
 	}
 
 	@Override
-	public ArrayList<Entity> getSourceEntities() {
-		return new ArrayList<>();
-	}
-
-	@Override
-	public Vec3d getSourcePoint() {
-		return getGlobalPosition();
-	}
-	@Override
-	public Vec3d getSinkPoint() {
-		return getGlobalPosition();
-	}
-
-	@Override
-	public double getRadius() {
-		return getSize().mag2()/2.0;
+	public ArrayList<DisplayEntity> getSourceEntities() {
+		ArrayList<DisplayEntity> ret = new ArrayList<>();
+		if (prototypeEntity.getValue() == null)
+			return ret;
+		DisplayEntity ent = prototypeEntity.getValue().getNextEntity(0.0d);
+		if (ent != null) {
+			ret.add(ent);
+		}
+		return ret;
 	}
 
 }

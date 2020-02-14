@@ -22,6 +22,7 @@ import java.util.List;
 
 import com.jaamsim.Graphics.Arrow;
 import com.jaamsim.Graphics.DisplayEntity;
+import com.jaamsim.Graphics.FillEntity;
 import com.jaamsim.Graphics.LineEntity;
 import com.jaamsim.Graphics.PolylineInfo;
 import com.jaamsim.basicsim.Entity;
@@ -45,7 +46,13 @@ import com.jaamsim.render.RenderUtils;
 import com.jaamsim.render.VisibilityInfo;
 import com.jaamsim.units.DistanceUnit;
 
-public class PolylineModel extends DisplayModel implements LineEntity {
+public class PolylineModel extends DisplayModel implements LineEntity, FillEntity {
+
+	@Keyword(description = "Determines whether or not the polyline is outlined. "
+	                     + "If TRUE, it is outlined with a uniform colour. "
+	                     + "If FALSE, it is drawn without an outline.",
+	         exampleList = {"FALSE"})
+	private final BooleanInput outlined;
 
 	@Keyword(description = "The colour of the polyline.",
 	         exampleList = {"red"})
@@ -54,6 +61,15 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 	@Keyword(description = "The width of the polyline in pixels.",
 	         exampleList = {"1"})
 	private final IntegerInput width;
+
+	@Keyword(description = "Determines whether the polyline is filled or hollow. "
+	                     + "If TRUE, then the polyline has a solid fill.",
+	         exampleList = { "FALSE" })
+	private final BooleanInput filled;
+
+	@Keyword(description = "The colour for the filled part of the polyline.",
+	         exampleList = { "red" })
+	private final ColourInput fillColour;
 
 	@Keyword(description = "If TRUE, an arrow head is displayed at the end of the polyline.",
 	         exampleList = {"TRUE", "FALSE"})
@@ -64,6 +80,9 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 	protected final Vec3dInput arrowHeadSize;
 
 	{
+		outlined = new BooleanInput("Outlined", FORMAT, true);
+		this.addInput(outlined);
+
 		colour = new ColourInput("LineColour", FORMAT, ColourInput.BLACK);
 		this.addInput(colour);
 		this.addSynonym(colour, "Color");
@@ -73,6 +92,13 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 		width.setValidRange(0, Integer.MAX_VALUE);
 		this.addInput(width);
 		this.addSynonym(width, "Width");
+
+		filled = new BooleanInput("Filled", FORMAT, false);
+		this.addInput(filled);
+
+		fillColour = new ColourInput("FillColour", FORMAT, ColourInput.MED_GREY);
+		this.addInput(fillColour);
+		this.addSynonym(fillColour, "FillColor");
 
 		showArrowHead = new BooleanInput("ShowArrowHead", FORMAT, false);
 		this.addInput(showArrowHead);
@@ -107,7 +133,7 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 
 	@Override
 	public boolean isOutlined() {
-		return true;
+		return outlined.getValue();
 	}
 
 	@Override
@@ -118,6 +144,16 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 	@Override
 	public int getLineWidth() {
 		return Math.max(1, width.getValue());
+	}
+
+	@Override
+	public boolean isFilled() {
+		return filled.getValue();
+	}
+
+	@Override
+	public Color4d getFillColour() {
+		return fillColour.getValue();
 	}
 
 	public boolean getShowArrowHead() {
@@ -132,11 +168,15 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 
 		private Arrow arrowObservee;
 		private LineEntity lineEnt;
+		private FillEntity fillEnt;
 
 		private ArrayList<Vec4d> headPoints = null;
 		private Vec3d arrowSizeCache;
 		private int lineWidthCache;
 		private Color4d lineColourCache;
+		private boolean outlinedCache;
+		private boolean filledCache;
+		private Color4d fillColourCache;
 		private boolean showArrowHeadCache;
 
 		private Transform globalTransCache;
@@ -163,6 +203,8 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 				arrowObservee = (Arrow)observee;
 			if (observee instanceof LineEntity)
 				lineEnt = (LineEntity) observee;
+			if (ent instanceof FillEntity)
+				fillEnt = (FillEntity) ent;
 		}
 
 		/**
@@ -179,8 +221,12 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 				globalTrans = displayObservee.getGlobalPositionTransform();
 			}
 
+			boolean outln = lineEnt == null ? outlined.getValue() : lineEnt.isOutlined();
 			Color4d lineColour = lineEnt == null ? getLineColour() : lineEnt.getLineColour();
 			int lineWidth = lineEnt == null ? getLineWidth() : lineEnt.getLineWidth();
+
+			boolean fill = fillEnt == null ? filled.getValue() : fillEnt.isFilled();
+			Color4d fc = fillEnt == null ? fillColour.getValue() : fillEnt.getFillColour();
 
 			Vec3d arrowSize = getArrowHeadSize();
 			if (arrowObservee != null)
@@ -193,6 +239,9 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 			dirty = dirty || !compareArray(pisCache, pis);
 			dirty = dirty || lineWidthCache != lineWidth;
 			dirty = dirty || dirty_col4d(lineColourCache, lineColour);
+			dirty = dirty || outlinedCache != outln;
+			dirty = dirty || filledCache != fill;
+			dirty = dirty || fillColourCache != fc;
 			dirty = dirty || showArrowHeadCache != getShowArrowHead();
 			dirty = dirty || dirty_vec3d(arrowSizeCache, arrowSize);
 			dirty = dirty || !compare(globalTransCache, globalTrans);
@@ -201,6 +250,9 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 			pisCache = pis;
 			lineWidthCache = lineWidth;
 			lineColourCache = lineColour;
+			outlinedCache = outln;
+			filledCache = fill;
+			fillColourCache = fc;
 			showArrowHeadCache = getShowArrowHead();
 			arrowSizeCache = arrowSize;
 			globalTransCache = globalTrans;
@@ -261,15 +313,24 @@ public class PolylineModel extends DisplayModel implements LineEntity {
 					RenderUtils.transformPointsLocal(globalTrans, points, 0);
 				}
 
-				int wid = pi.getWidth();
-				if (wid == -1)
-					wid = lineWidth;
+				// Draw the outline
+				if (outln) {
+					int wid = pi.getWidth();
+					if (wid == -1)
+						wid = lineWidth;
 
-				Color4d col = pi.getColor();
-				if (col == null)
-					col = lineColour;
+					Color4d col = pi.getColor();
+					if (col == null)
+						col = lineColour;
+					cachedProxies.add(new LineProxy(points, col, wid, vi, displayObservee.getEntityNumber()));
+				}
 
-				cachedProxies.add(new LineProxy(points, col, wid, vi, displayObservee.getEntityNumber()));
+				// Draw the fill
+				if (fill) {
+					Vec3d scale = new Vec3d(1.0d, 1.0d, 1.0d);
+					Transform trans = new Transform();
+					cachedProxies.add(new PolygonProxy(points, trans, scale, fc, false, 1, getVisibilityInfo(), displayObservee.getEntityNumber()));
+				}
 			}
 
 			// Add the arrowhead

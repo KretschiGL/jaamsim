@@ -18,6 +18,7 @@
 package com.jaamsim.basicsim;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 
@@ -34,6 +35,7 @@ import com.jaamsim.input.ExpResType;
 import com.jaamsim.input.ExpResult;
 import com.jaamsim.input.ExpValResult;
 import com.jaamsim.input.ExpressionHandle;
+import com.jaamsim.input.InOutHandle;
 import com.jaamsim.input.Input;
 import com.jaamsim.input.InputAgent;
 import com.jaamsim.input.InputErrorException;
@@ -77,10 +79,13 @@ public class Entity {
 	public static final int FLAG_RETAINED = 0x0400;  // entity is retained when the model is reset between runs
 	private int flags;
 
+	Entity parent;
+
 	private final ArrayList<Input<?>> inpList = new ArrayList<>();
 
 	private final HashMap<String, AttributeHandle> attributeMap = new LinkedHashMap<>();
 	private final HashMap<String, ExpressionHandle> customOutputMap = new LinkedHashMap<>();
+	private final HashMap<String, InOutHandle> inputOutputMap = new LinkedHashMap<>();
 
 	public static final String KEY_INPUTS = "Key Inputs";
 	public static final String OPTIONS = "Options";
@@ -169,6 +174,12 @@ public class Entity {
 		return simModel.getSimulation();
 	}
 
+	/**
+	 * Performs any additional actions that are required after a new configuration file has been
+	 * loaded. Performed prior to validation.
+	 */
+	public void postLoad() {}
+
 	public void validate() throws InputErrorException {
 		for (Input<?> in : inpList) {
 			in.validate();
@@ -216,6 +227,9 @@ public class Entity {
 	public void setInputsForDragAndDrop() {}
 
 	public void kill() {
+		for (Entity ent : getChildren()) {
+			ent.kill();
+		}
 		if (testFlag(Entity.FLAG_DEAD))
 			return;
 		simModel.removeInstance(this);
@@ -223,12 +237,25 @@ public class Entity {
 
 	/**
 	 * Reverses the actions taken by the kill method.
-	 * @param name - entity's name before it was deleted
+	 * @param name - entity's absolute name before it was deleted
 	 */
 	public void restore(String name) {
 		simModel.restoreInstance(this);
 		this.setName(name);
 		this.clearFlag(Entity.FLAG_DEAD);
+		postDefine();
+	}
+
+	public final boolean isAdded() {
+		return this.testFlag(Entity.FLAG_ADDED);
+	}
+
+	public final boolean isGenerated() {
+		return this.testFlag(Entity.FLAG_GENERATED);
+	}
+
+	public final boolean isRegistered() {
+		return this.testFlag(Entity.FLAG_REGISTERED);
 	}
 
 	/**
@@ -262,6 +289,17 @@ public class Entity {
 
 	protected void addInput(Input<?> in) {
 		inpList.add(in);
+	}
+
+	protected void addInputAsOutput(Input<?> input) {
+		addInputAsOutput(input, input.getKeyword(), Integer.MAX_VALUE-1, DimensionlessUnit.class);
+	}
+
+	protected void addInputAsOutput(Input<?> input, String alias, int sequence, Class<? extends Unit> unitType) {
+
+		InOutHandle handle = new InOutHandle(this, input, alias, sequence, unitType);
+		inputOutputMap.put(alias, handle);
+
 	}
 
 	protected void removeInput(Input<?> in) {
@@ -359,10 +397,61 @@ public class Entity {
 
 	/**
 	 * Method to return the name of the entity.
-	 * Note that the name of the entity may not be the unique identifier used in the namedEntityHashMap; see Entity.toString()
+	 * This returns the "absolute" name for entities that are the child of other entities.
+	 * Use getLocalName() for the name relative to this entity's parent
 	 */
 	public final String getName() {
+		if (!this.isRegistered() || parent == null) {
+			return entityName;
+		}
+
+		// Build up the name based on the chain of parents
+		ArrayList<String> revNames = new ArrayList<>();
+		revNames.add(entityName);
+		Entity curEnt = this.getParent();
+		JaamSimModel model = getJaamSimModel();
+		while(curEnt != model.getSimulation()) {
+			revNames.add(curEnt.entityName);
+			curEnt = curEnt.getParent();
+		}
+
+		// Build up the name back to front
+		StringBuilder sb = new StringBuilder();
+		Collections.reverse(revNames);
+		for (int i = 0; i < revNames.size(); ++i) {
+			sb.append(revNames.get(i));
+			if (i < revNames.size()-1) {
+				sb.append('.');
+			}
+		}
+		return sb.toString();
+	}
+
+	public final String getLocalName() {
 		return entityName;
+	}
+
+	/**
+	 * Add a child to this entity, should only be called from JaamSimModel
+	 * @param child
+	 */
+	public void addChild(Entity child) {
+		error("Entity [%s] may not have children", getName());
+	}
+
+	public void removeChild(Entity child) {
+		error("Entity [%s] may not have children", getName());
+	}
+
+	/**
+	 * Called when an entity which is a child of this entity has been renamed
+	 * Note: Should only be called from JaamSimModel.renameEntity()
+	 * @param e
+	 * @param oldName
+	 * @param newName
+	 */
+	public void renameChild(Entity e, String oldName, String newName) {
+		error("Entity [%s] may not have children", getName());
 	}
 
 	/**
@@ -383,10 +472,61 @@ public class Entity {
 	}
 
 	/**
-	 * Method to set the input name of the entity.
+	 * Sets the absolute name of the entity.
+	 * @param newName - new absolute name
 	 */
 	public void setName(String newName) {
+		String localName = newName;
+		if (newName.contains(".")) {
+			String[] names = newName.split("\\.");
+			localName = names[names.length - 1];
+		}
+		setLocalName(localName);
+	}
+
+	/**
+	 * Sets the local name of the entity.
+	 * @param newName - new local name
+	 */
+	public void setLocalName(String newName) {
 		simModel.renameEntity(this, newName);
+	}
+
+	/**
+	 * Returns the parent entity for this entity
+	 */
+	public Entity getParent() {
+		if (parent != null)
+			return parent;
+		return simModel.getSimulation();
+	}
+
+	/**
+	 * Gets a named child from this entity.
+	 * Default behaviour always returns null, only specific entities may have children
+	 * @param name - the local name of the child, implementers must split the name on '.' characters and recursively call getChild()
+	 * @return the descendant named or null if no such entity exists
+	 */
+	public Entity getChild(String name) {
+		return null;
+	}
+
+	/**
+	 * Returns the named child entities for this entity.
+	 * @return array of child entities
+	 */
+	public ArrayList<Entity> getChildren() {
+		return new ArrayList<>();
+	}
+
+	public int getSubModelLevel() {
+		int ret = 0;
+		Entity ent = parent;
+		while (ent != null) {
+			ret++;
+			ent = ent.parent;
+		}
+		return ret;
 	}
 
 	/**
@@ -576,6 +716,9 @@ public class Entity {
 		if (customOutputMap.containsKey(outputName))
 			return customOutputMap.get(outputName);
 
+		if (inputOutputMap.containsKey(outputName))
+			return inputOutputMap.get(outputName);
+
 		if (hasOutput(outputName)) {
 			OutputHandle ret = new OutputHandle(this, outputName);
 			if (ret.getUnitType() == UserSpecifiedUnit.class)
@@ -599,6 +742,9 @@ public class Entity {
 		if (customOutputMap.containsKey(outputName))
 			return customOutputMap.get(outputName);
 
+		if (inputOutputMap.containsKey(outputName))
+			return inputOutputMap.get(outputName);
+
 		if (OutputHandle.hasOutputInterned(this.getClass(), outputName)) {
 			OutputHandle ret = new OutputHandle(this, outputName);
 			if (ret.getUnitType() == UserSpecifiedUnit.class)
@@ -616,6 +762,8 @@ public class Entity {
 		if (attributeMap.containsKey(outputName))
 			return true;
 		if (customOutputMap.containsKey(outputName))
+			return true;
+		if (inputOutputMap.containsKey(outputName))
 			return true;
 
 		return false;
@@ -727,6 +875,13 @@ public class Entity {
 		}
 		return ret;
 	}
+	public ArrayList<String> getInputOutputNames(){
+		ArrayList<String> ret = new ArrayList<>();
+		for (String name : inputOutputMap.keySet()) {
+			ret.add(name);
+		}
+		return ret;
+	}
 
 
 	public ObjectType getObjectType() {
@@ -756,6 +911,13 @@ public class Entity {
 	    sequence = 2)
 	public double getSimTime(double simTime) {
 		return simTime;
+	}
+
+	@Output(name = "Parent",
+	 description = "The parent entity of this entity.",
+	    sequence = 3)
+	public Entity getParentOutput(double simTime) {
+		return getParent();
 	}
 
 }

@@ -40,7 +40,6 @@ import java.util.Locale;
 import java.util.Map.Entry;
 
 import com.jaamsim.Commands.Command;
-import com.jaamsim.Commands.RenameCommand;
 import com.jaamsim.Graphics.EntityLabel;
 import com.jaamsim.StringProviders.StringProvider;
 import com.jaamsim.basicsim.Entity;
@@ -64,10 +63,13 @@ public class InputAgent {
 	private static final String recordEditsMarker = "RecordEdits";
 
 	private static final String INP_ERR_DEFINEUSED = "The name: %s has already been used and is a %s";
-	private static final String INP_ERR_BADNAME = "An entity name cannot be blank or contain "
+	public static final String INP_ERR_BADNAME = "An entity name cannot be blank or contain "
 	                                            + "spaces, tabs, braces, single or double quotes, "
-	                                            + "square brackets, or the hash character.";
-	public static final char[] INVALID_ENTITY_CHARS = new char[]{' ', '\t', '\n', '{', '}', '\'', '"', '[', ']', '#'};
+	                                            + "square brackets, the hash character, or a "
+	                                            + "period.\n "
+	                                            + "Name: %s";
+	private static final String INP_ERR_BADPARENT = "The parent entity [%s] has not been defined.";
+	public static final char[] INVALID_ENTITY_CHARS = new char[]{' ', '\t', '\n', '{', '}', '\'', '"', '[', ']', '#','.'};
 
 	private static final String[] EARLY_KEYWORDS = {"UnitType", "UnitTypeList", "OutputUnitType", "SecondaryUnitType", "DataFile", "AttributeDefinitionList", "CustomOutputList"};
 	private static final String[] GRAPHICS_PALETTES = {"Graphics Objects", "View", "Display Models"};
@@ -292,30 +294,30 @@ public class InputAgent {
 	}
 
 	public static <T extends Entity> T generateEntityWithName(JaamSimModel simModel, Class<T> proto, String key) {
-		return generateEntityWithName(simModel, proto, key, false, false);
+		return generateEntityWithName(simModel, proto, key, null, false, false);
 	}
 
 	public static <T extends Entity> T generateEntityWithName(JaamSimModel simModel, Class<T> proto, String key,
 			boolean reg) {
-		return generateEntityWithName(simModel, proto, key, reg, false);
+		return generateEntityWithName(simModel, proto, key, null, reg, false);
 	}
 
 	public static <T extends Entity> T generateEntityWithName(JaamSimModel simModel, Class<T> proto, String key,
 			boolean reg, boolean retain) {
+		return generateEntityWithName(simModel, proto, key, null, reg, retain);
+	}
+
+	public static <T extends Entity> T generateEntityWithName(JaamSimModel simModel, Class<T> proto, String key, Entity parent,
+			boolean reg, boolean retain) {
 		if (key == null)
 			throw new ErrorException("Must provide a name for generated Entities");
 
-		if (!isValidName(key)) {
-			InputAgent.logError(simModel, INP_ERR_BADNAME);
-			return null;
-		}
+		if (!isValidName(key))
+			throw new ErrorException(INP_ERR_BADNAME, key);
 
-		T ent = simModel.createInstance(proto, key, false, true, reg, retain);
-		if (ent == null) {
-			InputAgent.logError(simModel,
-					"Could not create new Entity: %s", key);
-			return null;
-		}
+		T ent = simModel.createInstance(proto, key, parent, false, true, reg, retain);
+		if (ent == null)
+			throw new ErrorException("Could not create new Entity: %s", key);
 
 		return ent;
 	}
@@ -344,7 +346,7 @@ public class InputAgent {
 	 * or after the 'AddedRecord' flag is found in the configuration file.
 	 * @param simModel - JaamSimModel in which to create the entity
 	 * @param proto - class for the entity to be created
-	 * @param key - base name for the entity to be created
+	 * @param key - base absolute name for the entity to be created
 	 * @param sep - string to append to the name if it is already in use
 	 * @param addedEntity - true if the entity is new to the model
 	 * @return new entity
@@ -354,7 +356,7 @@ public class InputAgent {
 		return defineEntity(simModel, proto, name, addedEntity);
 	}
 
-	private static boolean isValidName(String key) {
+	public static boolean isValidName(String key) {
 		if (key.isEmpty())
 			return false;
 		for (int i = 0; i < key.length(); ++i) {
@@ -373,7 +375,7 @@ public class InputAgent {
 	 * file.
 	 * @param simModel - JaamSimModel in which to create the entity
 	 * @param proto - class for the entity to be created
-	 * @param key - name for the entity to be created
+	 * @param key - absolute name for the entity to be created
 	 * @param addedEntity - true if the entity is new to the model
 	 * @return new entity
 	 */
@@ -385,43 +387,40 @@ public class InputAgent {
 			return null;
 		}
 
-		if (!isValidName(key)) {
-			InputAgent.logError(simModel, INP_ERR_BADNAME);
+		Entity parent = null;
+		String localName = key;
+
+		if (key.contains(".")) {
+			String[] names = key.split("\\.");
+			localName = names[names.length - 1];
+			names = Arrays.copyOf(names, names.length - 1);
+			parent = simModel.getEntityFromNames(names);
+			if (parent == null) {
+				String parentName = key.substring(0, key.length() - localName.length() - 1);
+				InputAgent.logError(simModel, INP_ERR_BADPARENT, parentName);
+				return null;
+			}
+		}
+
+		return defineEntity(simModel, proto, localName, parent, addedEntity);
+	}
+
+	private static <T extends Entity> T defineEntity(JaamSimModel simModel, Class<T> proto, String localName, Entity parent, boolean addedEntity) {
+
+		if (!isValidName(localName)) {
+			InputAgent.logError(simModel, INP_ERR_BADNAME, localName);
 			return null;
 		}
 
-		T ent = simModel.createInstance(proto, key, addedEntity, false, true, true);
+		T ent = simModel.createInstance(proto, localName, parent, addedEntity, false, true, true);
 
 		if (ent == null) {
 			InputAgent.logError(simModel,
-					"Could not create new Entity: %s", key);
+					"Could not create new child Entity: %s for parent: %s", localName, parent);
 			return null;
 		}
 
 		return ent;
-	}
-
-	/**
-	 * Assigns a new name to the given entity.
-	 * @param ent - entity to be renamed
-	 * @param newName - new name for the entity
-	 */
-	public static void renameEntity(Entity ent, String newName) {
-
-		// If the name has not changed, do nothing
-		if (ent.getName().equals(newName))
-			return;
-
-		// Check that the entity was defined AFTER the RecordEdits command
-		if (!ent.testFlag(Entity.FLAG_ADDED))
-			throw new ErrorException("Cannot rename an entity that was defined before the RecordEdits command.");
-
-		// Check that the new name is valid
-		if (!isValidName(newName))
-			throw new ErrorException(INP_ERR_BADNAME);
-
-		// Rename the entity
-		InputAgent.storeAndExecute(new RenameCommand(ent, newName));
 	}
 
 	public static void processKeywordRecord(JaamSimModel simModel, ArrayList<String> record, ParseContext context) {
@@ -488,6 +487,9 @@ public class InputAgent {
 		// Load the input file
 		URI dirURI = file.getParentFile().toURI();
 		InputAgent.readStream(simModel, "", dirURI, file.getName());
+
+		// Perform any actions that are required after loading the input file
+		simModel.postLoad();
 
 		// Validate the inputs
 		for (Entity each : simModel.getClonesOfIterator(Entity.class)) {
@@ -985,7 +987,7 @@ public class InputAgent {
 		// Prepare a sorted list of all the entities that were added to the model
 		ArrayList<Entity> newEntities = new ArrayList<>();
 		for (Entity ent : simModel.getClonesOfIterator(Entity.class)) {
-			if (!ent.testFlag(Entity.FLAG_ADDED) || ent.testFlag(Entity.FLAG_GENERATED))
+			if (!ent.isAdded() || ent.isGenerated())
 				continue;
 			if (ent instanceof EntityLabel && !((EntityLabel) ent).getShow()
 					&& ((EntityLabel) ent).isDefault())
@@ -1000,6 +1002,7 @@ public class InputAgent {
 
 		// Print the first part of the "Define" statement for this object type
 		Class<? extends Entity> entClass = null;
+		int level = 0;
 		for (Entity ent : newEntities) {
 
 			// Is the class different from the last one
@@ -1008,6 +1011,12 @@ public class InputAgent {
 				// Close the previous Define statement
 				if (entClass != null) {
 					file.format("}%n");
+				}
+
+				// Add a blank line between sub-model levels
+				if (ent.getSubModelLevel() != level) {
+					level = ent.getSubModelLevel();
+					file.format("%n");
 				}
 
 				// Start the new Define statement
@@ -1029,7 +1038,7 @@ public class InputAgent {
 		// Prepare a sorted list of all the entities that were edited
 		ArrayList<Entity> entityList = new ArrayList<>();
 		for (Entity ent : simModel.getClonesOfIterator(Entity.class)) {
-			if (!ent.testFlag(Entity.FLAG_EDITED) || ent.testFlag(Entity.FLAG_GENERATED))
+			if (!ent.testFlag(Entity.FLAG_EDITED) || ent.isGenerated())
 				continue;
 			if (ent instanceof EntityLabel && !((EntityLabel) ent).getShow()
 					&& ((EntityLabel) ent).isDefault())
@@ -1359,7 +1368,7 @@ public class InputAgent {
 		ArrayList<Entity> entList = new ArrayList<>();
 		for (Entity ent : simModel.getClonesOfIterator(Entity.class)) {
 
-			if (ent.testFlag(Entity.FLAG_GENERATED))
+			if (ent.isGenerated())
 				continue;
 
 			if (!ent.isReportable())
@@ -1407,12 +1416,19 @@ public class InputAgent {
 			if (ret != 0)
 				return ret;
 
+			// First sort by sub-model level
+			int sub0 = ent0.getSubModelLevel();
+			int sub1 = ent1.getSubModelLevel();
+			ret = Integer.compare(sub0, sub1);
+			if (ret != 0)
+				return ret;
+
 			ObjectType ot0 = ent0.getJaamSimModel().getObjectTypeForClass(class0);
 			ObjectType ot1 = ent1.getJaamSimModel().getObjectTypeForClass(class1);
 			String pal0 = ot0.getPaletteName();
 			String pal1 = ot1.getPaletteName();
 
-			// Otherwise, first sort by graphics vs non-graphics palettes
+			// If the levels are the same, then sort by graphics vs non-graphics palettes
 			boolean isGraf0 = Arrays.asList(GRAPHICS_PALETTES).contains(pal0);
 			boolean isGraf1 = Arrays.asList(GRAPHICS_PALETTES).contains(pal1);
 			ret = Boolean.compare(isGraf0, isGraf1);  // Non-graphics goes first

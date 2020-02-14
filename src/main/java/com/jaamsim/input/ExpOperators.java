@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2017-2019 JaamSim Software Inc.
+ * Copyright (C) 2017-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -277,8 +277,29 @@ public class ExpOperators {
 		return ExpValResult.makeValidRes(ExpResType.NUMBER, DimensionlessUnit.class);
 	}
 
+	private static void checkStringFunction(ExpResult arg, String source, int pos) throws ExpError {
+		if (arg.type != ExpResType.STRING) {
+			throw new ExpError(source, pos, "Argument must be a string");
+		}
+	}
+
+	private static ExpValResult validateStringFunction(ParseContext context, ExpValResult arg, String source, int pos) {
+		if (  arg.state == ExpValResult.State.ERROR ||
+		      arg.state == ExpValResult.State.UNDECIDABLE) {
+			return arg;
+		}
+		// Check that the argument is a collection
+		if (arg.type != ExpResType.STRING) {
+			ExpError error = new ExpError(source, pos, "Argument must be a string");
+			return ExpValResult.makeErrorRes(error);
+		}
+		return ExpValResult.makeValidRes(ExpResType.STRING, null);
+	}
+
 
 	private static String unitToString(Class<? extends Unit> unit) {
+		if (unit == null)
+			return "null";
 		return unit.getSimpleName();
 	}
 
@@ -1346,6 +1367,8 @@ public class ExpOperators {
 			}
 		});
 
+		///////////////////////////////////////////////////
+		// Higher Order Functions
 		addFunction("map", 2, 2, new CallableFunc() {
 			@Override
 			public void checkUnits(ParseContext context, ExpResult[] args,
@@ -2076,6 +2099,9 @@ public class ExpOperators {
 			}
 		});
 
+		///////////////////////////////////////////////////
+		// String Functions
+
 		addFunction("parseNumber", 1, 1, new CallableFunc() {
 			@Override
 			public void checkUnits(ParseContext context, ExpResult[] args,
@@ -2105,6 +2131,197 @@ public class ExpOperators {
 					return ExpValResult.makeErrorRes(error);
 				}
 				return ExpValResult.makeValidRes(ExpResType.NUMBER, DimensionlessUnit.class);
+			}
+		});
+
+		addFunction("substring", 2, 3, new CallableFunc() {
+			@Override
+			public void checkUnits(ParseContext context, ExpResult[] args,
+					String source, int pos) throws ExpError {
+				if (args[0].type != ExpResType.STRING) {
+					throw new ExpError(source, pos, "First parameter must be a string");
+				}
+				if (args[1].type != ExpResType.NUMBER || args[1].unitType != DimensionlessUnit.class) {
+					throw new ExpError(source, pos, "Second parameter must be a dimensionless number");
+				}
+				if (args.length == 3 && (args[2].type != ExpResType.NUMBER || args[2].unitType != DimensionlessUnit.class)) {
+					throw new ExpError(source, pos, "Third parameter must be a dimensionless number");
+				}
+			}
+			@Override
+			public ExpResult call(EvalContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				String str = args[0].stringVal;
+				int length = str.length();
+				int beginIndex = (int) args[1].value - 1;
+				beginIndex = Math.min(length, Math.max(0, beginIndex));
+				int endIndex = length;
+				if (args.length == 3) {
+					endIndex = (int) (args[2].value - 1);
+					endIndex = Math.min(length, Math.max(beginIndex, endIndex));
+				}
+				return ExpResult.makeStringResult(str.substring(beginIndex, endIndex));
+			}
+			@Override
+			public ExpValResult validate(ParseContext context, ExpValResult[] args, String source, int pos) {
+				ExpValResult mergedErrors = mergeMultipleErrors(args);
+				if (mergedErrors != null)
+					return mergedErrors;
+
+				if (args[0].type != ExpResType.STRING) {
+					ExpError error = new ExpError(source, pos, "First parameter must be a string");
+					return ExpValResult.makeErrorRes(error);
+				}
+				if (args[1].type != ExpResType.NUMBER || args[1].unitType != DimensionlessUnit.class) {
+					ExpError error = new ExpError(source, pos, "Second parameter must be a dimensionless number");
+					return ExpValResult.makeErrorRes(error);
+				}
+				if (args.length == 3 && (args[2].type != ExpResType.NUMBER || args[2].unitType != DimensionlessUnit.class)) {
+					ExpError error = new ExpError(source, pos, "Third parameter must be a dimensionless number");
+					return ExpValResult.makeErrorRes(error);
+				}
+				return ExpValResult.makeValidRes(ExpResType.STRING, null);
+			}
+		});
+
+		addFunction("indexOfStr", 2, 3, new CallableFunc() {
+			@Override
+			public void checkUnits(ParseContext context, ExpResult[] args,
+					String source, int pos) throws ExpError {
+				if (args[0].type != ExpResType.STRING) {
+					throw new ExpError(source, pos, "First parameter must be a string");
+				}
+				if (args[1].type != ExpResType.STRING) {
+					throw new ExpError(source, pos, "Second parameter must be a string");
+				}
+				if (args.length == 3 && (args[2].type != ExpResType.NUMBER || args[2].unitType != DimensionlessUnit.class)) {
+					throw new ExpError(source, pos, "Third parameter must be a dimensionless number");
+				}
+			}
+			@Override
+			public ExpResult call(EvalContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				String str = args[0].stringVal;
+				String subStr = args[1].stringVal;
+				int fromIndex = 0;
+				if (args.length == 3)
+					fromIndex = (int) (args[2].value - 1);
+				return ExpResult.makeNumResult(str.indexOf(subStr, fromIndex) + 1, DimensionlessUnit.class);
+			}
+			@Override
+			public ExpValResult validate(ParseContext context, ExpValResult[] args, String source, int pos) {
+				ExpValResult mergedErrors = mergeMultipleErrors(args);
+				if (mergedErrors != null)
+					return mergedErrors;
+
+				if (args[0].type != ExpResType.STRING) {
+					ExpError error = new ExpError(source, pos, "First parameter must be a string");
+					return ExpValResult.makeErrorRes(error);
+				}
+				if (args[1].type != ExpResType.STRING) {
+					ExpError error = new ExpError(source, pos, "Second parameter must be a string");
+					return ExpValResult.makeErrorRes(error);
+				}
+				if (args.length == 3 && (args[2].type != ExpResType.NUMBER || args[2].unitType != DimensionlessUnit.class)) {
+					ExpError error = new ExpError(source, pos, "Third parameter must be a dimensionless number");
+					return ExpValResult.makeErrorRes(error);
+				}
+				return ExpValResult.makeValidRes(ExpResType.NUMBER, DimensionlessUnit.class);
+			}
+		});
+
+		addFunction("toUpperCase", 1, 1, new CallableFunc() {
+			@Override
+			public void checkUnits(ParseContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				checkStringFunction(args[0], source, pos);
+			}
+			@Override
+			public ExpResult call(EvalContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				return ExpResult.makeStringResult(args[0].stringVal.toUpperCase());
+			}
+			@Override
+			public ExpValResult validate(ParseContext context, ExpValResult[] args, String source, int pos) {
+				return validateStringFunction(context, args[0], source, pos);
+			}
+		});
+
+		addFunction("toLowerCase", 1, 1, new CallableFunc() {
+			@Override
+			public void checkUnits(ParseContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				checkStringFunction(args[0], source, pos);
+			}
+			@Override
+			public ExpResult call(EvalContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				return ExpResult.makeStringResult(args[0].stringVal.toLowerCase());
+			}
+			@Override
+			public ExpValResult validate(ParseContext context, ExpValResult[] args, String source, int pos) {
+				return validateStringFunction(context, args[0], source, pos);
+			}
+		});
+
+		addFunction("trim", 1, 1, new CallableFunc() {
+			@Override
+			public void checkUnits(ParseContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				checkStringFunction(args[0], source, pos);
+			}
+			@Override
+			public ExpResult call(EvalContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				return ExpResult.makeStringResult(args[0].stringVal.trim());
+			}
+			@Override
+			public ExpValResult validate(ParseContext context, ExpValResult[] args, String source, int pos) {
+				return validateStringFunction(context, args[0], source, pos);
+			}
+		});
+
+		addFunction("split", 2, 3, new CallableFunc() {
+			@Override
+			public void checkUnits(ParseContext context, ExpResult[] args,
+					String source, int pos) throws ExpError {
+				if (args[0].type != ExpResType.STRING) {
+					throw new ExpError(source, pos, "First parameter must be a string");
+				}
+				if (args[1].type != ExpResType.STRING) {
+					throw new ExpError(source, pos, "Second parameter must be a string");
+				}
+				if (args.length == 3 && (args[2].type != ExpResType.NUMBER || args[2].unitType != DimensionlessUnit.class)) {
+					throw new ExpError(source, pos, "Third parameter must be a dimensionless number");
+				}
+			}
+			@Override
+			public ExpResult call(EvalContext context, ExpResult[] args, String source, int pos) throws ExpError {
+				String str = args[0].stringVal;
+				String regex = args[1].stringVal;
+				int limit = 0;
+				if (args.length == 3)
+					limit = (int) args[2].value;
+				String[] array;
+				try {
+					array = str.split(regex, limit);
+				}
+				catch(RuntimeException e) {
+					throw new ExpError(source, pos, e.getMessage());
+				}
+				return ExpCollections.wrapCollection(array, null);
+			}
+			@Override
+			public ExpValResult validate(ParseContext context, ExpValResult[] args, String source, int pos) {
+				ExpValResult mergedErrors = mergeMultipleErrors(args);
+				if (mergedErrors != null)
+					return mergedErrors;
+
+				if (args[0].type != ExpResType.STRING) {
+					ExpError error = new ExpError(source, pos, "First parameter must be a string");
+					return ExpValResult.makeErrorRes(error);
+				}
+				if (args[1].type != ExpResType.STRING) {
+					ExpError error = new ExpError(source, pos, "Second parameter must be a string");
+					return ExpValResult.makeErrorRes(error);
+				}
+				if (args.length == 3 && (args[2].type != ExpResType.NUMBER || args[2].unitType != DimensionlessUnit.class)) {
+					ExpError error = new ExpError(source, pos, "Third parameter must be a dimensionless number");
+					return ExpValResult.makeErrorRes(error);
+				}
+				return ExpValResult.makeValidRes(ExpResType.COLLECTION, null);
 			}
 		});
 

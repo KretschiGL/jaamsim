@@ -1,6 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2013 Ausenco Engineering Canada Inc.
+ * Copyright (C) 2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +17,17 @@
  */
 @VERSION@
 
+@DEFINES@
+
+// For batch rendering the bind space variables are per-instance
+#ifdef BATCH_RENDER
+in mat4 bindSpaceMat;
+in mat4 bindSpaceNorMat;
+#else
 uniform mat4 bindSpaceMat;
 uniform mat4 bindSpaceNorMat;
+#endif
+
 uniform mat4 modelViewMat;
 uniform mat4 projMat;
 uniform mat4 normalMat;

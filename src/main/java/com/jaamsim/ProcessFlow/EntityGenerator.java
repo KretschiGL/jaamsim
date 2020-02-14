@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2013 Ausenco Engineering Canada Inc.
- * Copyright (C) 2016-2019 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ import com.jaamsim.units.TimeUnit;
 /**
  * EntityGenerator creates sequence of DisplayEntities at random intervals, which are placed in a target Queue.
  */
-public class EntityGenerator extends LinkedService {
+public class EntityGenerator extends LinkedService implements EntityGen {
 
 	@Keyword(description = "The arrival time for the first generated entity.",
 	         exampleList = { "3.0 h", "ExponentialDistribution1", "'1[s] + 0.5*[TimeSeries1].PresentValue'" })
@@ -163,8 +163,10 @@ public class EntityGenerator extends LinkedService {
 
 		// Set the name for the entities
 		String name = baseName.getValue();
-		if (name == null)
+		if (name == null) {
 			name = this.getName() + "_";
+			name = name.replace(".", "_");
+		}
 
 		// Create the new entities
 		int num = (int) entitiesPerArrival.getValue().getNextSample(getSimTime());
@@ -195,16 +197,15 @@ public class EntityGenerator extends LinkedService {
 		return true;  // can always stop when isFinished is called in startStep
 	}
 
+	@Override
 	public void setPrototypeEntity(DisplayEntity proto) {
-		ArrayList<String> toks = new ArrayList<>();
-		toks.add(proto.getName());
-		KeywordIndex kw = new KeywordIndex(prototypeEntity.getKeyword(), toks, null);
+		KeywordIndex kw = InputAgent.formatArgs(prototypeEntity.getKeyword(), proto.getName());
 		InputAgent.storeAndExecute(new KeywordCommand(this, kw));
 	}
 
 	@Override
-	public ArrayList<Entity> getSourceEntities() {
-		ArrayList<Entity> ret = new ArrayList<>();
+	public ArrayList<DisplayEntity> getSourceEntities() {
+		ArrayList<DisplayEntity> ret = new ArrayList<>();
 		if (prototypeEntity.getValue() == null)
 			return ret;
 		DisplayEntity ent = prototypeEntity.getValue().getNextEntity(0.0d);

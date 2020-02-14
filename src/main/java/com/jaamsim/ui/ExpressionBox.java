@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2018-2019 JaamSim Software Inc.
+ * Copyright (C) 2018-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -264,24 +264,35 @@ public class ExpressionBox extends JDialog {
 	}
 
 	private void tryParse() {
+
+		// Prepare the input string
+		Entity ent = EditBox.getInstance().getCurrentEntity();
+		String str = editArea.getText().replace("\n", " ");
+		if (!str.isEmpty())
+			str = input.applyConditioning(str);
+
+		// Load the input
 		try {
-			// Load the input
-			Entity ent = EditBox.getInstance().getCurrentEntity();
-			String str = editArea.getText().replace("\n", " ");
-			if (!str.isEmpty())
-				str = input.applyConditioning(str);
 			KeywordIndex kw = InputAgent.formatInput(input.getKeyword(), str);
 			InputAgent.storeAndExecute(new KeywordCommand(ent, kw));
-
-			// If successful, show the result
-			double simTime = GUIFrame.getJaamSimModel().getSimTime();
-			msgText.setText(formatMessage(true, input.getPresentValueString(simTime)));
 			acceptButton.setEnabled(true);
 		}
 		catch (Exception e) {
 			msgText.setText(formatMessage(false, e.getMessage()));
 			acceptButton.setEnabled(false);
+			return;
 		}
+
+		// Show the present value
+		String valStr;
+		try {
+			double simTime = GUIFrame.getJaamSimModel().getSimTime();
+			valStr = input.getPresentValueString(simTime);
+		}
+		catch (Exception e) {
+			valStr = "Cannot evaluate at this time";
+		}
+		msgText.setText(formatMessage(true, valStr));
 	}
 
 	private static String formatMessage(boolean isValid, String str) {
@@ -402,7 +413,7 @@ public class ExpressionBox extends JDialog {
 					ArrayList<String> entNameList = new ArrayList<>();
 					JaamSimModel simModel = GUIFrame.getJaamSimModel();
 					for (DisplayEntity each: simModel.getClonesOfIterator(DisplayEntity.class)) {
-						if (each.testFlag(Entity.FLAG_GENERATED))
+						if (each.isGenerated())
 							continue;
 
 						if (each instanceof OverlayEntity || each instanceof Region
@@ -664,7 +675,7 @@ public class ExpressionBox extends JDialog {
 		ArrayList<String> nameList = new ArrayList<>();
 		JaamSimModel simModel = GUIFrame.getJaamSimModel();
 		for (DisplayEntity each: simModel.getClonesOfIterator(DisplayEntity.class)) {
-			if (each.testFlag(Entity.FLAG_GENERATED))
+			if (each.isGenerated())
 				continue;
 
 			if (each instanceof OverlayEntity || each instanceof Region
@@ -989,7 +1000,7 @@ public class ExpressionBox extends JDialog {
 				"Accepts two numbers with or without units. If the numbers have units, the units "
 						+ "must be the same, and the number returned will have that unit.",
 				"'5 % 2' returns 1.",
-				"'5[m] / 2[m]' returns 1[m]"));
+				"'5[m] % 2[m]' returns 1[m]"));
 
 		// LOGICAL OPERATORS
 
@@ -1247,7 +1258,7 @@ public class ExpressionBox extends JDialog {
 				"'cos(60[deg])' returns 0.5"));
 
 		functions.add(new ButtonDesc("tan", "Tangent function ('tan')",
-				"Returns the cosine function of the input value.",
+				"Returns the tangent function of the input value.",
 				"Accepts a dimensionless number or one with the units of AngleUnit and returns a "
 						+ "dimensionless number.",
 				"tan()",
@@ -1455,6 +1466,70 @@ public class ExpressionBox extends JDialog {
 				"parseNumber()",
 				-1,
 				"'parseNumber(\"1.5\")' returns 1.5"));
+
+		functions.add(new ButtonDesc("substring", "Substring function ('substring')",
+				"Returns a string that is a substring of the specified string. "
+						+ "The substring begins at the specified beginIndex and extends to the "
+						+ "character at index endIndex - 1. "
+						+ "Thus the length of the substring is endIndex-beginIndex.",
+				"Accepts a string followed by the beginIndex and the endIndex values. "
+						+ "If the endIndex is omitted, the substring extends to the end of the "
+						+ "string. Returns a string containing the specified portion of the "
+						+ "original string.",
+				"substring()",
+				-1,
+				"'substring(\"abcdefg\", 3)' returns \"cdefg\"",
+				"'substring(\"abcdefg\", 3, 6)' returns \"cde\""));
+
+		functions.add(new ButtonDesc("indexOfStr", "IndexOf function for Strings ('indexOfStr')",
+				"Returns the index within the specifed string of the first occurrence of the "
+						+ "specified substring, starting at the specified index. "
+						+ "Zero is returned if the substring is not found.",
+				"Accepts a string followed by the substring and the fromIndex value. "
+						+ "If the fromIndex is omitted, the entire string is searched. "
+						+ "Returns a dimensionless number.",
+				"indexOfStr()",
+				-1,
+				"'indexOfStr(\"abcdefg\", \"cd\")' returns 3",
+				"'indexOfStr(\"ffaffbc\", \"ff\", 3)' returns 4"));
+
+		functions.add(new ButtonDesc("toUpperCase", "UpperCase function ('toUpperCase')",
+				"Converts the specified string to upper case characters.",
+				"Accepts a string and returns a string.",
+				"toUpperCase()",
+				-1,
+				"'toUpperCase(\"abc\")' returns \"ABC\""));
+
+		functions.add(new ButtonDesc("toLowerCase", "LowerCase function ('toLowerCase')",
+				"Converts the specified string to lower case characters.",
+				"Accepts a string and returns a string.",
+				"toLowerCase()",
+				-1,
+				"'toLowerCase(\"ABC\")' returns \"abc\""));
+
+		functions.add(new ButtonDesc("trim", "Trim function ('trim')",
+				"Removes leading and trailing whitespace from the specified string.",
+				"Accepts a string and returns a string.",
+				"trim()",
+				-1,
+				"'trim(\"  abc  \")' returns \"abc\""));
+
+		functions.add(new ButtonDesc("split", "Split function ('split')",
+				"Divides the specified string into an array of substrings around matches to a "
+						+ "specified 'regex' string. "
+						+ "An optional third 'limit' argument specifies the maximum number of "
+						+ "substrings to return. "
+						+ "The function mirrors the split method provided in Java. "
+						+ "See the Java documentation for 'regex' string (regular expression).",
+				"Accepts a string followed by a 'regex' string. "
+						+ "An optional 'limit' number can be included. "
+						+ "Returns an array of strings.",
+				"split()",
+				-1,
+				"'split(\"ab:cd:ef\", \":\")' returns {\"ab\", \"cd\", \"ef\"}",
+				"'split(\"ab.cd.ef\", \"\\.\")' returns {\"ab\", \"cd\", \"ef\"}",
+				"'split(\"ab.cd.ef\", \"\\.\", 2)' returns {\"ab\", \"cd.ef\"}"));
+
 	}
 
 }

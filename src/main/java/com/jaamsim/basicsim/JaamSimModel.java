@@ -209,6 +209,16 @@ public class JaamSimModel {
 	}
 
 	/**
+	 * Performs any additional actions that are required for each entity after a new configuration
+	 * file has been loaded. Performed prior to validation.
+	 */
+	public void postLoad() {
+		for (Entity each : getClonesOfIterator(Entity.class)) {
+			each.postLoad();
+		}
+	}
+
+	/**
 	 * Performs consistency checks on the model inputs.
 	 * @return true if no validation errors were found
 	 */
@@ -543,7 +553,7 @@ public class JaamSimModel {
 	 * If the name already used, "_1", "_2", etc. will be appended to the name until an unused
 	 * name is found.
 	 * @param type - type of entity to be created
-	 * @param name - name for the created entity
+	 * @param name - absolute name for the created entity
 	 */
 	public void defineEntity(String type, String name) {
 		try {
@@ -680,6 +690,11 @@ public class JaamSimModel {
 	}
 
 	public final Entity getNamedEntity(String name) {
+		if (name.contains(".")) {
+			String[] names = name.split("\\.");
+			return getEntityFromNames(names);
+		}
+
 		synchronized (namedEntities) {
 			return namedEntities.get(name);
 		}
@@ -695,6 +710,18 @@ public class JaamSimModel {
 			}
 		}
 		return null;
+	}
+
+	// Get an entity from a chain of names, descending into the tree of children
+	public final Entity getEntityFromNames(String[] names) {
+		Entity currEnt = getSimulation();
+		for (String name: names) {
+			if (currEnt == null) {
+				return null;
+			}
+			currEnt = currEnt.getChild(name);
+		}
+		return currEnt;
 	}
 
 	public final long getEntitySequence() {
@@ -731,14 +758,15 @@ public class JaamSimModel {
 	/**
 	 * Creates a new entity.
 	 * @param proto - class for the entity
-	 * @param name - entity name
+	 * @param name - entity local name
+	 * @param parent - entity's parent
 	 * @param added - true if the entity was defined after the 'RecordEdits' flag
 	 * @param gen - true if the entity was created during the execution of the simulation
 	 * @param reg - true if the entity is included in the namedEntities HashMap
 	 * @param retain - true if the entity is retained when the model is reset between runs
 	 * @return new entity
 	 */
-	public final <T extends Entity> T createInstance(Class<T> proto, String name,
+	public final <T extends Entity> T createInstance(Class<T> proto, String name, Entity parent,
 			boolean added, boolean gen, boolean reg, boolean retain) {
 		T ent = createInstance(proto);
 		if (ent == null)
@@ -754,7 +782,9 @@ public class JaamSimModel {
 		if (retain)
 			ent.setFlag(Entity.FLAG_RETAINED);
 
-		ent.setName(name);
+		ent.parent = parent;
+		ent.setLocalName(name); // Note: child entities will be added to its parent during this call
+
 		ent.postDefine();
 		return ent;
 	}
@@ -773,14 +803,37 @@ public class JaamSimModel {
 		return ent;
 	}
 
+	/**
+	 * Changes the specified entity's name.
+	 * @param e - entity to be renamed
+	 * @param newName - new local name for the entity
+	 */
 	final void renameEntity(Entity e, String newName) {
 		synchronized(namedEntities) {
 			// Unregistered entities do not appear in the named entity hashmap, no consistency checks needed
-			if (!e.testFlag(Entity.FLAG_REGISTERED)) {
+			if (!e.isRegistered()) {
 				e.entityName = newName;
 				return;
 			}
 
+			if (e.getParent() != getSimulation()) {
+				// This entity is part of a submodel
+				Entity parent = e.getParent();
+
+				String oldName = e.getLocalName();
+				e.entityName = newName;
+
+				if (oldName == null) {
+					// Newly created entity
+					parent.addChild(e);
+				} else {
+					// Genuine renaming
+					parent.renameChild(e, oldName, newName);
+				}
+				return;
+			}
+
+			// This is a top-level entity
 			if (namedEntities.get(newName) != null)
 				throw new ErrorException("Entity name: %s is already in use.", newName);
 
@@ -940,9 +993,14 @@ public class JaamSimModel {
 		synchronized (namedEntities) {
 			validateEntList();
 			numLiveEnts--;
-			if (e.testFlag(Entity.FLAG_REGISTERED)) {
-				if (e != namedEntities.remove(e.entityName))
-					throw new ErrorException("Named Entities Internal Consistency error: %s", e);
+			if (e.isRegistered()) {
+				if (e.parent == null) {
+					if (e != namedEntities.remove(e.entityName))
+						throw new ErrorException("Named Entities Internal Consistency error: %s", e);
+				}
+				else {
+					e.parent.removeChild(e);
+				}
 			}
 
 			e.entityName = null;

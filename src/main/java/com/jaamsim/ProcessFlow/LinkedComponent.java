@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2013 Ausenco Engineering Canada Inc.
- * Copyright (C) 2016-2019 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import com.jaamsim.Commands.KeywordCommand;
 import com.jaamsim.Graphics.DisplayEntity;
 import com.jaamsim.Graphics.LinkDisplayable;
 import com.jaamsim.StringProviders.StringProvInput;
-import com.jaamsim.basicsim.Entity;
 import com.jaamsim.input.EntityInput;
 import com.jaamsim.input.Input;
 import com.jaamsim.input.InputAgent;
@@ -32,7 +31,6 @@ import com.jaamsim.input.InterfaceEntityInput;
 import com.jaamsim.input.Keyword;
 import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.input.Output;
-import com.jaamsim.math.Vec3d;
 import com.jaamsim.states.StateEntity;
 import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.RateUnit;
@@ -186,32 +184,18 @@ public abstract class LinkedComponent extends StateEntity implements Linkable, L
 
 	// LinkDisplayable
 	@Override
-	public ArrayList<Entity> getDestinationEntities() {
-		ArrayList<Entity> ret = new ArrayList<>();
+	public ArrayList<DisplayEntity> getDestinationEntities() {
+		ArrayList<DisplayEntity> ret = new ArrayList<>();
 		Linkable l = nextComponent.getValue();
-		if (l != null && (l instanceof Entity)) {
-			ret.add((Entity)l);
+		if (l != null && (l instanceof DisplayEntity)) {
+			ret.add((DisplayEntity)l);
 		}
 		return ret;
 	}
 
 	@Override
-	public ArrayList<Entity> getSourceEntities() {
+	public ArrayList<DisplayEntity> getSourceEntities() {
 		return new ArrayList<>();
-	}
-
-	@Override
-	public Vec3d getSourcePoint() {
-		return getGlobalPosition();
-	}
-	@Override
-	public Vec3d getSinkPoint() {
-		return getGlobalPosition();
-	}
-
-	@Override
-	public double getRadius() {
-		return getSize().mag2()/2.0;
 	}
 
 	// ******************************************************************************************************
