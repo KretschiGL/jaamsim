@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2016-2019 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,6 @@ import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.states.StateEntity;
 import com.jaamsim.ui.EventViewer;
 import com.jaamsim.ui.LogBox;
-import com.jaamsim.ui.View;
 import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.Unit;
 
@@ -87,11 +86,10 @@ public class JaamSimModel {
 	private long lastTickForTrace = -1L;
 	private long preDefinedEntityCount = 0L;  // Number of entities after loading autoload.cfg
 
+	private final HashMap<String, String> stringCache = new HashMap<>();
+
 	private final ArrayList<ObjectType> objectTypes = new ArrayList<>();
 	private final HashMap<Class<? extends Entity>, ObjectType> objectTypeMap = new HashMap<>();
-
-	private final ArrayList<View> views = new ArrayList<>();
-	private int nextViewID = 1;
 
 	private final SimCalendar calendar = new SimCalendar();
 	private long startMillis;  // start time in milliseonds from the epoch
@@ -135,7 +133,7 @@ public class JaamSimModel {
 		EntityListNode listNode = entityList.next;
 		while(listNode != entityList) {
 			Entity curEnt = listNode.ent;
-			if (!curEnt.testFlag(Entity.FLAG_DEAD)) {
+			if (!curEnt.isDead()) {
 				curEnt.kill();
 			}
 			listNode = listNode.next;
@@ -157,6 +155,8 @@ public class JaamSimModel {
 		// close warning/error trace file
 		closeLogFile();
 
+		stringCache.clear();
+
 		// Reset the run number and run indices
 		runNumber = 1;
 
@@ -175,6 +175,17 @@ public class JaamSimModel {
 		numErrors = 0;
 		numWarnings = 0;
 		lastTickForTrace = -1L;
+	}
+
+	public final String internString(String str) {
+		synchronized (stringCache) {
+			String ret = stringCache.get(str);
+			if (ret == null) {
+				stringCache.put(str, str);
+				ret = str;
+			}
+			return ret;
+		}
 	}
 
 	/**
@@ -465,7 +476,7 @@ public class JaamSimModel {
 		EntityListNode curNode = entityList.next;
 		while(curNode != entityList) {
 			Entity curEnt = curNode.ent;
-			if (!curEnt.testFlag(Entity.FLAG_DEAD) && !curEnt.testFlag(Entity.FLAG_RETAINED)) {
+			if (!curEnt.isDead() && !curEnt.testFlag(Entity.FLAG_RETAINED)) {
 				curEnt.kill();
 			}
 			curNode = curNode.next;
@@ -583,7 +594,7 @@ public class JaamSimModel {
 	 * @param file - file to which the model inputs are to be saved
 	 */
 	public void save(File file) {
-		InputAgent.printNewConfigurationFileWithName(this, file.getName());
+		InputAgent.printNewConfigurationFileWithName(this, file);
 		configFile = file;
 	}
 
@@ -865,7 +876,7 @@ public class JaamSimModel {
 			EntityListNode lastNode = entityList;
 			while (curNode != null && curNode != entityList) {
 				Entity curEnt = curNode.ent;
-				if (!curEnt.testFlag(Entity.FLAG_DEAD)) {
+				if (!curEnt.isDead()) {
 					numEntities++;
 				} else {
 					numDeadEntities++;
@@ -906,7 +917,7 @@ public class JaamSimModel {
 			lastEntNum = Long.MAX_VALUE;
 			while (curNode != null && curNode != entityList) {
 				Entity curEnt = curNode.ent;
-				if (!curEnt.testFlag(Entity.FLAG_DEAD)) {
+				if (!curEnt.isDead()) {
 					numEntities++;
 				} else {
 					numDeadEntities++;
@@ -1092,29 +1103,6 @@ public class JaamSimModel {
 		}
 	}
 
-	public void addView(View v) {
-		synchronized (views) {
-			views.add(v);
-		}
-	}
-
-	public void removeView(View v) {
-		synchronized (views) {
-			views.remove(v);
-		}
-	}
-
-	public ArrayList<View> getViews() {
-		synchronized (views) {
-			return views;
-		}
-	}
-
-	public int getNextViewID() {
-		nextViewID++;
-		return nextViewID;
-	}
-
 	private final EventHandle thresholdChangedHandle = new EventHandle();
 	private final ThresholdChangedTarget thresholdChangedTarget = new ThresholdChangedTarget();
 
@@ -1144,14 +1132,6 @@ public class JaamSimModel {
 		}
 		if (!thresholdChangedTarget.users.isEmpty() && !thresholdChangedHandle.isScheduled())
 			EventManager.scheduleTicks(0, 2, false, thresholdChangedTarget, thresholdChangedHandle);
-	}
-
-	/**
-	 * Sets the present configuration file.
-	 * @param file - the present configuration file.
-	 */
-	public void setConfigFile(File file) {
-		configFile = file;
 	}
 
 	/**

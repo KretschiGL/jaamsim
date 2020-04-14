@@ -47,12 +47,13 @@ import com.jaamsim.Commands.DefineCommand;
 import com.jaamsim.Commands.KeywordCommand;
 import com.jaamsim.DisplayModels.DisplayModel;
 import com.jaamsim.GameObjects.GameEntity;
+import com.jaamsim.Graphics.DirectedEntity;
 import com.jaamsim.Graphics.DisplayEntity;
 import com.jaamsim.Graphics.Editable;
 import com.jaamsim.Graphics.EntityLabel;
-import com.jaamsim.Graphics.LinkDisplayable;
 import com.jaamsim.Graphics.OverlayEntity;
 import com.jaamsim.Graphics.Region;
+import com.jaamsim.Graphics.View;
 import com.jaamsim.basicsim.Entity;
 import com.jaamsim.basicsim.JaamSimModel;
 import com.jaamsim.basicsim.ObjectType;
@@ -65,6 +66,7 @@ import com.jaamsim.input.InputAgent;
 import com.jaamsim.input.InputErrorException;
 import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.math.AABB;
+import com.jaamsim.math.Color4d;
 import com.jaamsim.math.Mat4d;
 import com.jaamsim.math.MathUtils;
 import com.jaamsim.math.Plane;
@@ -94,7 +96,6 @@ import com.jaamsim.ui.ContextMenu;
 import com.jaamsim.ui.FrameBox;
 import com.jaamsim.ui.GUIFrame;
 import com.jaamsim.ui.LogBox;
-import com.jaamsim.ui.View;
 import com.jaamsim.units.AngleUnit;
 import com.jaamsim.units.DistanceUnit;
 import com.jogamp.newt.event.KeyEvent;
@@ -130,12 +131,13 @@ public class RenderManager implements DragSourceListener {
 	private final Renderer renderer;
 	private final AtomicBoolean finished = new AtomicBoolean(false);
 	private final AtomicBoolean fatalError = new AtomicBoolean(false);
-	private final AtomicBoolean redraw = new AtomicBoolean(false);
+	private final RedrawCallback redraw = new RedrawCallback();
 
 	private final AtomicBoolean screenshot = new AtomicBoolean(false);
 
 	private final AtomicBoolean showLinks = new AtomicBoolean(false);
 	private final AtomicBoolean createLinks = new AtomicBoolean(false);
+	private final AtomicBoolean linkDirection = new AtomicBoolean(true);
 	private final double linkArrowSize = 0.2;
 
 	private final ExceptionLogger exceptionLogger;
@@ -211,21 +213,40 @@ public class RenderManager implements DragSourceListener {
 		}, "RenderManagerThread");
 		managerThread.start();
 
-		GUIFrame.registerCallback(new Runnable() {
-			@Override
-			public void run() {
-				synchronized(redraw) {
-					if (windowControls.size() == 0 && !screenshot.get()) {
-						return; // Do not queue a redraw if there are no open windows
-					}
-					redraw.set(true);
-					redraw.notifyAll();
-				}
-			}
-		});
+		GUIFrame.registerCallback(redraw);
 
 		popupLock = new Object();
 		sceneDragLock = new Object();
+	}
+
+	private class RedrawCallback implements Runnable {
+		final AtomicBoolean redraw = new AtomicBoolean(false);
+
+		@Override
+		public void run() {
+			synchronized(this) {
+				if (windowControls.size() == 0 && !screenshot.get()) {
+					return; // Do not queue a redraw if there are no open windows
+				}
+				redraw.set(true);
+				this.notifyAll();
+			}
+		}
+
+		final void beginDrawing() {
+			redraw.set(false);
+		}
+
+		final void waitForRedraw() {
+			// Wait for a redraw request
+			synchronized(this) {
+				while (!redraw.get()) {
+					try {
+						this.wait();
+					} catch (InterruptedException e) {}
+				}
+			}
+		}
 	}
 
 	public static final void updateTime(long simTick) {
@@ -252,8 +273,8 @@ public class RenderManager implements DragSourceListener {
 			}
 		}
 
-		IntegerVector windSize = view.getWindowSize();
-		IntegerVector windPos = view.getWindowPos();
+		IntegerVector windSize = GUIFrame.getInstance().getWindowSize(view);
+		IntegerVector windPos = GUIFrame.getInstance().getWindowPos(view);
 
 		Image icon = GUIFrame.getWindowIcon();
 
@@ -293,11 +314,10 @@ public class RenderManager implements DragSourceListener {
 
 		// Update the state of the window in the input file
 		View v = windowToViewMap.get(windowID);
-		if (!v.getKeepWindowOpen() && v.showWindow() && !v.testFlag(Entity.FLAG_DEAD)) {
-			KeywordIndex kw = InputAgent.formatArgs("ShowWindow", "FALSE");
+		if (!GUIFrame.getInstance().isIconified() && v.showWindow() && !v.isDead()) {
+			KeywordIndex kw = InputAgent.formatBoolean("ShowWindow", false);
 			InputAgent.storeAndExecute(new KeywordCommand(v, kw));
 		}
-		v.setKeepWindowOpen(false);
 
 		windowControls.remove(windowID);
 		windowToViewMap.remove(windowID);
@@ -305,17 +325,6 @@ public class RenderManager implements DragSourceListener {
 
 	public void setActiveWindow(int windowID) {
 		activeWindowID = windowID;
-		final View activeView = windowToViewMap.get(windowID);
-		if (activeView != null)
-		{
-			EventQueue.invokeLater(new Runnable() {
-				@Override
-				public void run() {
-					GUIFrame.getInstance().updateControls();
-				}
-			});
-
-		}
 	}
 
 	public static boolean isGood() {
@@ -363,9 +372,9 @@ public class RenderManager implements DragSourceListener {
 				}
 
 				double renderTime = EventManager.ticksToSecs(simTick);
-				redraw.set(false);
+				redraw.beginDrawing();
 
-				ArrayList<View> views = GUIFrame.getJaamSimModel().getViews();
+				ArrayList<View> views = GUIFrame.getInstance().getViews();
 				for (int i = 0; i < views.size(); i++) {
 					View v = views.get(i);
 					v.update(renderTime);
@@ -392,19 +401,10 @@ public class RenderManager implements DragSourceListener {
 
 					ArrayList<DisplayModelBinding> selectedBindings = new ArrayList<>();
 
-					int numEnts = 0;
-
 					// Update all graphical entities in the simulation
+					// All entities are updated regardless of the number or whether 'Show' is set
+					// (required for Queue, etc.)
 					for (DisplayEntity de : GUIFrame.getJaamSimModel().getClonesOfIterator(DisplayEntity.class)) {
-						if (!de.getShow())
-							continue;
-
-						numEnts++;
-						// There is an upper limit on number of entities
-						if (numEnts > maxRenderableEntities) {
-							break;
-						}
-
 						try {
 							de.updateGraphics(renderTime);
 						}
@@ -416,7 +416,7 @@ public class RenderManager implements DragSourceListener {
 
 					updateNanos = System.nanoTime();
 
-					numEnts = 0;
+					int numEnts = 0;
 					// Collect the render proxies for each entity
 					for (DisplayEntity de : GUIFrame.getJaamSimModel().getClonesOfIterator(DisplayEntity.class)) {
 						if (!de.getShow())
@@ -454,7 +454,7 @@ public class RenderManager implements DragSourceListener {
 
 					// Finally include the displayable links for linked entities
 					if (showLinks.get()) {
-						addLinkDisplays(cachedScene);
+						addLinkDisplays(linkDirection.get(), cachedScene);
 					}
 
 					endNanos = System.nanoTime();
@@ -516,15 +516,7 @@ public class RenderManager implements DragSourceListener {
 				logException(t);
 			}
 
-			// Wait for a redraw request
-			synchronized(redraw) {
-				while (!redraw.get()) {
-					try {
-						redraw.wait();
-					} catch (InterruptedException e) {}
-				}
-			}
-
+			redraw.waitForRedraw();
 		}
 
 		exceptionLogger.printExceptionLog();
@@ -978,7 +970,14 @@ public class RenderManager implements DragSourceListener {
 				}
 			}
 
-		} else {
+		}
+		else if (ent instanceof View) {
+			selectedEntity = null;
+			View view = (View) ent;
+			int windowID = getWindowID(view);
+			focusWindow(windowID);
+		}
+		else {
 			selectedEntity = null;
 		}
 
@@ -1209,8 +1208,7 @@ public class RenderManager implements DragSourceListener {
 		oldFixed.mult4(dragEntityTransMat, fixedPoint);
 
 		Vec4d newFixed = new Vec4d(0.0d, 0.0d, 0.0d, 1.0d);
-		selectedEntity.setSize(scale);
-		Mat4d transMat = selectedEntity.getTransMatrix(); // Get the new matrix
+		Mat4d transMat = selectedEntity.getTransMatrix(scale); // Get the new matrix once size is changed
 		newFixed.mult4(transMat, fixedPoint);
 
 		Vec4d posAdjust = new Vec4d(0.0d, 0.0d, 0.0d, 1.0d);
@@ -1413,10 +1411,6 @@ public class RenderManager implements DragSourceListener {
 		if (selectedEntity == null)
 			return -1;
 
-		if (selectedEntity == null) {
-			return -1;
-		}
-
 		ArrayList<Vec3d> points = selectedEntity.getPoints();
 		if (points == null)
 			return -1;
@@ -1473,7 +1467,7 @@ public class RenderManager implements DragSourceListener {
 			dragEntityPoints = selectedEntity.getPoints();
 			dragEntityOrientation = selectedEntity.getOrientation();
 			dragEntitySize = selectedEntity.getSize();
-			dragEntityTransMat = selectedEntity.getTransMatrix();
+			dragEntityTransMat = selectedEntity.getTransMatrix(dragEntitySize);
 			dragEntityInvTransMat = selectedEntity.getInvTransMatrix();
 			if (selectedEntity instanceof OverlayEntity) {
 				dragEntityScreenPosition = ((OverlayEntity) selectedEntity).getScreenPosition();
@@ -1762,6 +1756,10 @@ public class RenderManager implements DragSourceListener {
 		return -1;
 	}
 
+	public boolean isVisible(View view) {
+		return windowToViewMap.containsValue(view);
+	}
+
 	public static Frame getOpenWindowForView(View view) {
 		if (!isGood()) return null;
 
@@ -2023,12 +2021,15 @@ public class RenderManager implements DragSourceListener {
 	public void setCreateLinks(boolean bCreate) {
 		createLinks.set(bCreate);
 	}
+	public void setLinkDirection(boolean bool) {
+		linkDirection.set(bool);
+	}
 
-	private void addLink(DisplayEntity sourceLD, DisplayEntity destLD, ArrayList<RenderProxy> scene) {
-		Vec3d source = sourceLD.getSourcePoint();
-		Vec3d sink = destLD.getSinkPoint();
-		double sourceRadius = sourceLD.getRadius();
-		double sinkRadius = destLD.getRadius();
+	private void addLink(DirectedEntity sourceDE, DirectedEntity destDE, boolean dir, ArrayList<RenderProxy> scene) {
+		Vec3d source = sourceDE.getSourcePoint();
+		Vec3d sink = destDE.getSinkPoint();
+		double sourceRadius = sourceDE.entity.getRadius();
+		double sinkRadius = destDE.entity.getRadius();
 		Vec3d arrowDir = new Vec3d();
 		arrowDir.sub3(sink, source);
 		if (arrowDir.mag3() < (sourceRadius + sinkRadius)) {
@@ -2080,28 +2081,24 @@ public class RenderManager implements DragSourceListener {
 		segments.add(sink4);
 		segments.add(ap1);
 
-		scene.add(new LineProxy(segments, ColourInput.BLUE, 1, DisplayModel.ALWAYS, 0));
+		Color4d linkColour = ColourInput.BLUE;
+		if (!dir)
+			linkColour = ColourInput.RED;
+
+		scene.add(new LineProxy(segments, linkColour, 1, DisplayModel.ALWAYS, 0));
 
 	}
 
-	private void addLinkDisplays(ArrayList<RenderProxy> scene) {
-
-		for (Entity e : GUIFrame.getJaamSimModel().getClonesOfIterator(
-				Entity.class, LinkDisplayable.class)) {
-
-				LinkDisplayable ld = (LinkDisplayable)e;
-				ArrayList<DisplayEntity> dests = ld.getDestinationEntities();
-				for (DisplayEntity dest : dests) {
-					addLink((DisplayEntity) ld, dest, scene);
-				}
-
-				ArrayList<DisplayEntity> sources = ld.getSourceEntities();
-				for (DisplayEntity source : sources) {
-					addLink(source, (DisplayEntity) ld, scene);
-				}
-
+	private void addLinkDisplays(boolean dir, ArrayList<RenderProxy> scene) {
+		for (DisplayEntity ent : GUIFrame.getJaamSimModel().getClonesOfIterator(DisplayEntity.class)) {
+			DirectedEntity de = new DirectedEntity(ent, dir);
+			for (DirectedEntity dest : ent.getDestinationDirEnts(dir)) {
+				addLink(de, dest, dir, scene);
+			}
+			for (DirectedEntity source : ent.getSourceDirEnts(dir)) {
+				addLink(source, de, dir, scene);
+			}
 		}
-
 	}
 
 	public static void setDebugInfo(boolean showDebug) {

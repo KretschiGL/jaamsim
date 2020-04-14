@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2009-2011 Ausenco Engineering Canada Inc.
- * Copyright (C) 2018-2019 JaamSim Software Inc.
+ * Copyright (C) 2018-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -196,8 +196,11 @@ public class InputAgent {
 				while (quoted) {
 
 					// Append the next line to the line
+					String nextLine = buf.readLine();
+					if (nextLine == null)  // end of file
+						break;
 					StringBuilder sb = new StringBuilder(line);
-					sb.append(buf.readLine());
+					sb.append(nextLine);
 					line = sb.toString();
 
 					// Clear the record and tokenize the now longer line
@@ -571,7 +574,7 @@ public class InputAgent {
 		JaamSimModel simModel = ent.getJaamSimModel();
 		if (simModel.isRecordEdits()) {
 			in.setEdited(true);
-			ent.setFlag(Entity.FLAG_EDITED);
+			ent.setEdited();
 		}
 
 		ent.updateForInput(in);
@@ -946,7 +949,7 @@ public class InputAgent {
 	 *
 	 * @param fileName - the full path and file name for the new configuration file.
 	 */
-	public static void printNewConfigurationFileWithName(JaamSimModel simModel, String fileName) {
+	public static void printNewConfigurationFileWithName(JaamSimModel simModel, File f) {
 
 		// 1) WRITE LINES FROM THE ORIGINAL CONFIGURATION FILE
 
@@ -971,7 +974,7 @@ public class InputAgent {
 		}
 
 		// Create the new configuration file and copy the saved lines
-		FileEntity file = new FileEntity( fileName);
+		FileEntity file = new FileEntity(f);
 		for( int i=0; i < preAddedRecordLines.size(); i++ ) {
 			file.format("%s%n", preAddedRecordLines.get( i ));
 		}
@@ -1038,7 +1041,7 @@ public class InputAgent {
 		// Prepare a sorted list of all the entities that were edited
 		ArrayList<Entity> entityList = new ArrayList<>();
 		for (Entity ent : simModel.getClonesOfIterator(Entity.class)) {
-			if (!ent.testFlag(Entity.FLAG_EDITED) || ent.isGenerated())
+			if (!ent.isEdited() || ent.isGenerated())
 				continue;
 			if (ent instanceof EntityLabel && !((EntityLabel) ent).getShow()
 					&& ((EntityLabel) ent).isDefault())
@@ -1050,7 +1053,8 @@ public class InputAgent {
 		// Write a stub definition for the Custom Outputs for each entity
 		boolean blankLinePrinted = false;
 		for (Entity ent : entityList) {
-			if (ent.getCustomOutputNames().isEmpty())
+			Input<?> in = ent.getInput("CustomOutputList");
+			if (in == null || !in.isEdited())
 				continue;
 			if (!blankLinePrinted) {
 				file.format("%n");
@@ -1368,7 +1372,7 @@ public class InputAgent {
 		ArrayList<Entity> entList = new ArrayList<>();
 		for (Entity ent : simModel.getClonesOfIterator(Entity.class)) {
 
-			if (ent.isGenerated())
+			if (!ent.isRegistered())
 				continue;
 
 			if (!ent.isReportable())

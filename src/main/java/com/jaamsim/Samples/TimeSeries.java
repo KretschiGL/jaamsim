@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2013 Ausenco Engineering Canada Inc.
- * Copyright (C) 2018-2019 JaamSim Software Inc.
+ * Copyright (C) 2018-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,14 @@
  */
 package com.jaamsim.Samples;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 
 import com.jaamsim.Graphics.DisplayEntity;
 import com.jaamsim.basicsim.EntityTarget;
+import com.jaamsim.basicsim.ObserverEntity;
+import com.jaamsim.basicsim.SubjectEntity;
+import com.jaamsim.basicsim.SubjectEntityDelegate;
 import com.jaamsim.events.EventManager;
 import com.jaamsim.events.ProcessTarget;
 import com.jaamsim.input.BooleanInput;
@@ -35,7 +39,7 @@ import com.jaamsim.units.TimeUnit;
 import com.jaamsim.units.Unit;
 import com.jaamsim.units.UserSpecifiedUnit;
 
-public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
+public class TimeSeries extends DisplayEntity implements TimeSeriesProvider, SubjectEntity {
 
 	@Keyword(description = "If TRUE, the simulation times corresponding to the time stamps "
 	                     + "entered to the 'Value' keyword are calculated relative time for the "
@@ -63,6 +67,8 @@ public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
 	         exampleList = {"8760.0 h"})
 	private final ValueInput cycleTime;
 
+	private final SubjectEntityDelegate subject = new SubjectEntityDelegate(this);
+
 	{
 		offsetToFirst = new BooleanInput("OffsetToFirst", KEY_INPUTS, true);
 		this.addInput(offsetToFirst);
@@ -83,6 +89,12 @@ public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
 	}
 
 	public TimeSeries() { }
+
+	@Override
+	public void earlyInit() {
+		super.earlyInit();
+		subject.clear();
+	}
 
 	@Override
 	public void validate() {
@@ -115,6 +127,21 @@ public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
 		this.waitForNextValue();
 	}
 
+	@Override
+	public void registerObserver(ObserverEntity obs) {
+		subject.registerObserver(obs);
+	}
+
+	@Override
+	public void notifyObservers() {
+		subject.notifyObservers();
+	}
+
+	@Override
+	public ArrayList<ObserverEntity> getObserverList() {
+		return subject.getObserverList();
+	}
+
 	public boolean isOffsetToFirst() {
 		return offsetToFirst.getValue();
 	}
@@ -130,6 +157,9 @@ public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
 		if (durTicks == 0L)
 			return;
 		this.scheduleProcessTicks(durTicks, 0, waitForNextValueTarget);
+
+		// Notify any observers
+		notifyObservers();
 	}
 
 	/**
@@ -169,6 +199,17 @@ public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
 	@Override
 	public double getValueForTicks(long ticks) {
 		return getValue(getTSPointForTicks(ticks));
+	}
+
+	/**
+	 * Return the last time that the value updated, before the given
+	 * simulation time.
+	 * @param ticks - simulation time in clock ticks.
+	 * @return simulation time in clock ticks at which the time series value changed.
+	 */
+	@Override
+	public long getLastChangeBeforeTicks(long ticks) {
+		return getTicks(getTSPointBefore(getTSPointForTicks(ticks)));
 	}
 
 	/**
@@ -341,6 +382,29 @@ public class TimeSeries extends DisplayEntity implements TimeSeriesProvider {
 		if (cycleTime.getValue() == Double.POSITIVE_INFINITY)
 			return getValue(pt);
 		return getValue(pt) + pt.numberOfCycles*getMaxValue();
+	}
+
+	/**
+	 * Returns the position in the time series that precedes the specified
+	 * position.
+	 * <p>
+	 * An index of -1 is returned if the specified position is a the start
+	 * of the time series data and a cycle time is not specified.
+	 * @param pt - specified position in the time series.
+	 * @return previous position in the time series.
+	 */
+	private TSPoint getTSPointBefore(TSPoint pt) {
+		if (pt.index == -1)
+			return new TSPoint(pt.index, pt.numberOfCycles);
+
+		if (pt.index == 0) {
+			if (cycleTime.getValue() == Double.POSITIVE_INFINITY)
+				return new TSPoint(-1, pt.numberOfCycles);
+
+			return new TSPoint(value.getValue().ticksList.length - 1, pt.numberOfCycles - 1);
+		}
+
+		return new TSPoint(pt.index - 1, pt.numberOfCycles);
 	}
 
 	/**

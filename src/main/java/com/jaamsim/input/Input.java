@@ -106,7 +106,11 @@ public abstract class Input<T> {
 	protected static final String VALID_DATE = "Accepts a calendar date and time in one of the following formats: 'YYYY-MM-DD hh:mm:ss.sss', 'YYYY-MM-DD hh:mm:ss', 'YYYY-MM-DD'";
 	protected static final String VALID_FILE = "Accepts a file path enclosed by single quotes.";
 	protected static final String VALID_DIR = "Accepts a directory path enclosed by single quotes.";
-	protected static final String VALID_EXP = "Accepts an expression that returns a dimensionless number. A value of zero implies FALSE; non-zero implies TRUE.";
+	protected static final String VALID_EXP_DIMLESS = "Accepts an expression that returns a dimensionless number. A value of zero implies FALSE; non-zero implies TRUE.";
+	protected static final String VALID_EXP_NUM = "Accepts an expression that returns a number.";
+	protected static final String VALID_EXP_STR = "Accepts an expression that returns a string.";
+	protected static final String VALID_EXP_ENT = "Accepts an expression that returns an entity.";
+	protected static final String VALID_EXP = "Accepts an expression.";
 	protected static final String VALID_KEYEVENT = "Accepts a single character representing a key on the keyboard. "
 	                                             + "For non-printing keys, enter the key's name such as HOME, ESCAPE, SPACE, F1, etc.";
 	protected static final String VALID_VALUE_LIST = "Accepts a list of numbers separated by spaces, followed by a unit for these values, if required.";
@@ -160,20 +164,21 @@ public abstract class Input<T> {
 	public Input(String key, String cat, T def) {
 		keyword = key;
 		category = cat;
-		setDefaultValue(def);
+		defValue = def;
 
-		edited = false;
 		promptReqd = true;
-		isDef = true;
 		hidden = false;
-		valueTokens = null;
 		defText = null;
 		isReqd = false;
-		isValid = true;
+
+		reset();
 	}
 
+	/**
+	 * Sets the input to its default value.
+	 */
 	public void reset() {
-		this.setDefaultValue( this.getDefaultValue() );
+		value = defValue;
 		valueTokens = null;
 		edited = false;
 		isDef = true;
@@ -270,9 +275,13 @@ public abstract class Input<T> {
 		return defText;
 	}
 
+	/**
+	 * Sets the default value and returns the input to its new default state.
+	 * @param val - new default value
+	 */
 	public void setDefaultValue(T val) {
 		defValue = val;
-		value = val;
+		reset();
 	}
 
 	public T getDefaultValue() {
@@ -692,7 +701,7 @@ public abstract class Input<T> {
 	public static void assertSumRange(DoubleVector vec, double min, double max)
 	throws InputErrorException {
 		double sum = vec.sum();
-		if (MathUtils.nearGT(sum, min) && MathUtils.nearLT(sum, max))
+		if ((MathUtils.nearGT(sum, min) || min == Double.NEGATIVE_INFINITY) && (MathUtils.nearLT(sum, max) || max == Double.POSITIVE_INFINITY))
 			return;
 
 		throw new InputErrorException(INP_ERR_SUMRANGE, min, max, sum);
@@ -967,7 +976,7 @@ public abstract class Input<T> {
 			ret += hh * usPerHr;
 			ret += mm * usPerMin;
 			ret += ss * usPerSec;
-			return ret;
+			return ret * 1e-6;
 		}
 
 		if (isextendfull.matcher(input).matches()) {
@@ -995,7 +1004,7 @@ public abstract class Input<T> {
 			ret += mm * usPerMin;
 			ret += ss * usPerSec;
 			ret += us;
-			return ret;
+			return ret * 1e-6;
 		}
 
 		throw new InputErrorException(INP_ERR_BADDATE, input);

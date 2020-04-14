@@ -20,10 +20,12 @@ package com.jaamsim.ProcessFlow;
 import java.util.ArrayList;
 
 import com.jaamsim.Commands.KeywordCommand;
+import com.jaamsim.EntityProviders.EntityProvInput;
 import com.jaamsim.Graphics.DisplayEntity;
 import com.jaamsim.StringProviders.StringProvInput;
-import com.jaamsim.input.EntityInput;
+import com.jaamsim.basicsim.SubjectEntity;
 import com.jaamsim.input.InputAgent;
+import com.jaamsim.input.InterfaceEntityListInput;
 import com.jaamsim.input.Keyword;
 import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.input.Output;
@@ -38,9 +40,14 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 	         exampleList = {"1.0 0.0 0.01 m"})
 	protected final Vec3dInput processPosition;
 
-	@Keyword(description = "The queue in which the waiting DisplayEntities will be placed.",
-	         exampleList = {"Queue1"})
-	protected final EntityInput<Queue> waitQueue;
+	@Keyword(description = "Queue from which the next entity for processing will be selected.\n\n"
+	                     + "If an expression is entered that can return various Queues, it is "
+	                     + "necessary for each Queue to be included in the entry to the "
+	                     + "'WatchList' keyword. "
+	                     + "If a Queue is not included, then the arrival of an entity to that "
+	                     + "Queue will not wake up this processor.",
+	         exampleList = {"Queue1", "'this.NumberProcessed % 2 == 0 ? [Queue1] : [Queue2]'"})
+	protected final EntityProvInput<Queue> waitQueue;
 
 	@Keyword(description = "An expression returning a string value that determines which of the "
 	                     + "queued entities are eligible to be selected. "
@@ -52,9 +59,17 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 	                     + "automatically. A floating point number is truncated to an integer."
 	                     + "\n\n"
 	                     + "Note that a change in the Match value does not trigger the processor "
-	                     + "to re-check the Queue.",
+	                     + "automatically to re-check the Queue. "
+	                     + "The processor can be triggered by adding one or more objects to the "
+	                     + "'WatchList' input.",
 	         exampleList = {"this.obj.Attrib1"})
 	protected final StringProvInput match;
+
+	@Keyword(description = "An optional list of objects to monitor.\n\n"
+	                     + "The queue will be inspected for an entity to process whenever one of "
+	                     + "the WatchList objects changes state.",
+	         exampleList = {"Object1  Object2"})
+	protected final InterfaceEntityListInput<SubjectEntity> watchList;
 
 	private String matchValue;
 
@@ -66,13 +81,18 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 		processPosition.setUnitType(DistanceUnit.class);
 		this.addInput(processPosition);
 
-		waitQueue = new EntityInput<>(Queue.class, "WaitQueue", KEY_INPUTS, null);
+		waitQueue = new EntityProvInput<>(Queue.class, "WaitQueue", KEY_INPUTS, null);
 		waitQueue.setRequired(true);
 		this.addInput(waitQueue);
 
 		match = new StringProvInput("Match", KEY_INPUTS, null);
 		match.setUnitType(DimensionlessUnit.class);
 		this.addInput(match);
+
+		watchList = new InterfaceEntityListInput<>(SubjectEntity.class, "WatchList", KEY_INPUTS, new ArrayList<>());
+		watchList.setIncludeSelf(false);
+		watchList.setUnique(true);
+		this.addInput(watchList);
 	}
 
 	public LinkedService() {}
@@ -84,17 +104,34 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 	}
 
 	@Override
+	public ArrayList<SubjectEntity> getWatchList() {
+		return watchList.getValue();
+	}
+
+	@Override
+	public void observerUpdate(SubjectEntity subj) {
+
+		// Avoid unnecessary updates
+		if (isBusy())
+			return;
+
+		this.performUnscheduledUpdate();
+	}
+
+	@Override
 	public void addEntity(DisplayEntity ent) {
 		if (isTraceFlag()) trace(0, "addEntity(%s)", ent);
 
 		// If there is no queue, then process the entity immediately
-		if (waitQueue.getValue() == null) {
+		double simTime = getSimTime();
+		Queue queue = getQueue(simTime);
+		if (queue == null) {
 			super.addEntity(ent);
 			return;
 		}
 
 		// Add the entity to the queue
-		waitQueue.getValue().addEntity(ent);
+		queue.addEntity(ent);
 	}
 
 	// ********************************************************************************************
@@ -109,7 +146,8 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 	 * @return next entity for processing.
 	 */
 	protected DisplayEntity getNextEntityForMatch(String m) {
-		DisplayEntity ent = waitQueue.getValue().removeFirstForMatch(m);
+		double simTime = getSimTime();
+		DisplayEntity ent = getQueue(simTime).removeFirstForMatch(m);
 		this.registerEntity(ent);
 		return ent;
 	}
@@ -150,11 +188,23 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 		InputAgent.storeAndExecute(new KeywordCommand(this, kw));
 	}
 
+	public Queue getQueue(double simTime) {
+		if (waitQueue.getValue() == null)
+			return null;
+		return waitQueue.getValue().getNextEntity(simTime);
+	}
+
 	@Override
 	public ArrayList<Queue> getQueues() {
 		ArrayList<Queue> ret = new ArrayList<>();
-		if (waitQueue.getValue() != null)
-			ret.add(waitQueue.getValue());
+
+		// Do not register the WaitQueue when the 'WatchList' input is set
+		if (!getWatchList().isEmpty())
+			return ret;
+
+		Queue queue = getQueue(0.0d);
+		if (queue != null)
+			ret.add(queue);
 		return ret;
 	}
 
@@ -197,7 +247,9 @@ public abstract class LinkedService extends LinkedDevice implements QueueUser {
 	@Override
 	public ArrayList<DisplayEntity> getSourceEntities() {
 		ArrayList<DisplayEntity> ret = super.getSourceEntities();
-		ret.addAll(getQueues());
+		Queue queue = getQueue(0.0d);
+		if (queue != null)
+			ret.add(queue);
 		return ret;
 	}
 

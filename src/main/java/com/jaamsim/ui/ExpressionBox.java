@@ -28,7 +28,6 @@ import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 
 import javax.swing.Box;
@@ -54,12 +53,16 @@ import com.jaamsim.Graphics.OverlayEntity;
 import com.jaamsim.Graphics.Region;
 import com.jaamsim.basicsim.Entity;
 import com.jaamsim.basicsim.JaamSimModel;
+import com.jaamsim.input.ExpEvaluator;
 import com.jaamsim.input.ExpParser;
+import com.jaamsim.input.ExpResType;
+import com.jaamsim.input.ExpResult;
 import com.jaamsim.input.Input;
 import com.jaamsim.input.InputAgent;
 import com.jaamsim.input.KeywordIndex;
 import com.jaamsim.input.OutputHandle;
 import com.jaamsim.input.Parser;
+import com.jaamsim.input.ExpParser.Expression;
 import com.jaamsim.units.Unit;
 
 public class ExpressionBox extends JDialog {
@@ -356,6 +359,7 @@ public class ExpressionBox extends JDialog {
 
 		buttonBar.addSeparator(separatorDim);
 		addButtons(buttonBar, logicalOperators, width, editArea);
+		buttonBar.add(Box.createRigidArea(gapDim));
 	}
 
 	public void addButtons(JToolBar buttonBar, ArrayList<ButtonDesc> bdList, int w, JTextArea text) {
@@ -413,7 +417,7 @@ public class ExpressionBox extends JDialog {
 					ArrayList<String> entNameList = new ArrayList<>();
 					JaamSimModel simModel = GUIFrame.getJaamSimModel();
 					for (DisplayEntity each: simModel.getClonesOfIterator(DisplayEntity.class)) {
-						if (each.isGenerated())
+						if (!each.isRegistered())
 							continue;
 
 						if (each instanceof OverlayEntity || each instanceof Region
@@ -614,11 +618,9 @@ public class ExpressionBox extends JDialog {
 			}
 
 			// Does the name contain any invalid characters?
-			for (char c : name.toCharArray()) {
-				if (Arrays.asList(InputAgent.INVALID_ENTITY_CHARS).contains(c)) {
-					setEditMode(EDIT_MODE_NORMAL);
-					return;
-				}
+			if (!name.isEmpty() && !InputAgent.isValidName(name)) {
+				setEditMode(EDIT_MODE_NORMAL);
+				return;
 			}
 
 			// Show the entity name pop-up
@@ -629,18 +631,8 @@ public class ExpressionBox extends JDialog {
 		if (editMode == EDIT_MODE_OUTPUT) {
 
 			// Find the entity name
-			Entity ent = null;
 			int dotIndex = text.lastIndexOf('.', ind1);
-			if (dotIndex >= 1 && text.charAt(dotIndex - 1) == ']') {
-				int bracketIndex = text.lastIndexOf('[', dotIndex);
-				if (bracketIndex >= 0) {
-					String entName = text.substring(bracketIndex + 1, dotIndex - 1);
-					ent = GUIFrame.getJaamSimModel().getNamedEntity(entName);
-				}
-			}
-			else if (dotIndex >= 4 && text.substring(dotIndex - 4, dotIndex).equals("this")) {
-				ent = EditBox.getInstance().getCurrentEntity();
-			}
+			Entity ent = getEntityReference(text, dotIndex);
 
 			if (ent == null) {
 				setEditMode(EDIT_MODE_NORMAL);
@@ -655,8 +647,7 @@ public class ExpressionBox extends JDialog {
 
 			// Does the name contain any invalid characters?
 			for (char c : name.toCharArray()) {
-				if (Arrays.asList(controlChars).contains(c)
-						|| Arrays.asList(mathChars).contains(c)) {
+				if (isControlChar(c) || isMathChar(c)) {
 					setEditMode(EDIT_MODE_NORMAL);
 					return;
 				}
@@ -675,7 +666,7 @@ public class ExpressionBox extends JDialog {
 		ArrayList<String> nameList = new ArrayList<>();
 		JaamSimModel simModel = GUIFrame.getJaamSimModel();
 		for (DisplayEntity each: simModel.getClonesOfIterator(DisplayEntity.class)) {
-			if (each.isGenerated())
+			if (!each.isRegistered())
 				continue;
 
 			if (each instanceof OverlayEntity || each instanceof Region
@@ -721,6 +712,34 @@ public class ExpressionBox extends JDialog {
 			outputMenu.setVisible(false);
 		outputMenu = new ScrollablePopupMenu();
 
+		// Sub-model components
+		ArrayList<String> compList = new ArrayList<>();
+		for (Entity comp : ent.getChildren()) {
+			if (!comp.isRegistered())
+				continue;
+			if (!comp.getLocalName().toUpperCase().contains(name.toUpperCase()))
+				continue;
+			compList.add(comp.getLocalName());
+		}
+		Collections.sort(compList);
+
+		for (String compName : compList) {
+			String str = String.format("[%s]", compName);
+			JMenuItem item = new JMenuItem(str);
+			item.addActionListener( new ActionListener() {
+
+				@Override
+				public void actionPerformed( ActionEvent event ) {
+					outputMenu = null;
+					editArea.replaceRange(item.getText(), ind0 + 1, ind1 + 1);
+					editArea.requestFocusInWindow();
+					setEditMode(EDIT_MODE_NORMAL);
+				}
+			} );
+			outputMenu.add(item);
+		}
+
+		// Outputs
 		ArrayList<OutputHandle> handles = new ArrayList<>();
 		for (OutputHandle hand : OutputHandle.getOutputHandleList(ent)) {
 			if (hand.getName().contains(" "))
@@ -750,12 +769,53 @@ public class ExpressionBox extends JDialog {
 			} );
 			outputMenu.add(item);
 		}
+
 		Point p = editArea.getCaret().getMagicCaretPosition();
 		if (p == null)
 			p = new Point();
 		int height = editArea.getFontMetrics(editArea.getFont()).getHeight();
 		outputMenu.setFocusable(false);
 		outputMenu.show(editArea, p.x, p.y + height);
+	}
+
+	private Entity getEntityReference(String text, int dotIndex) {
+
+		// Find the previous part of the text that might correspond to an entity
+		for (int i = dotIndex - 1; i >= 0; i--) {
+			String expString = text.substring(i, dotIndex);
+			//System.out.println(expString);
+
+			// Try to evaluate the string as an expression that returns an entity
+			Entity thisEnt = EditBox.getInstance().getCurrentEntity();
+			double simTime = GUIFrame.getJaamSimModel().getSimTime();
+			try {
+				ExpEvaluator.EntityParseContext pc = ExpEvaluator.getParseContext(thisEnt, expString);
+				Expression exp = ExpParser.parseExpression(pc, expString);
+				ExpParser.assertResultType(exp, ExpResType.ENTITY);
+
+				ExpResult res = ExpEvaluator.evaluateExpression(exp, simTime);
+				//System.out.println(res.entVal);
+				return res.entVal;
+			}
+			catch (Throwable e) {}
+		}
+		return null;
+	}
+
+	public boolean isControlChar(char ch) {
+		return containsChar(controlChars, ch);
+	}
+
+	public boolean isMathChar(char ch) {
+		return containsChar(mathChars, ch);
+	}
+
+	private boolean containsChar(char[] chars, char ch) {
+		for (char c : chars) {
+			if (c == ch)
+				return true;
+		}
+		return false;
 	}
 
 	private static class ButtonDesc {
@@ -833,6 +893,15 @@ public class ExpressionBox extends JDialog {
 				"this",
 				0,
 				"'this.Name' returns the name of the entity."));
+
+		simObjects.add(new ButtonDesc("sub", "Entity 'sub'",
+				"If an expression is used as the input to an entity, the identifier 'sub' can "
+						+ "be used in the expression instead of the name of the sub-model "
+						+ "containing the entity. It is equivalent to entering 'this.Parent'.",
+				null,
+				"sub",
+				0,
+				"'sub.Name' returns the name of the sub-model containing the entity."));
 
 		simObjects.add(new ButtonDesc("Sim", "Entity 'Simulation'",
 				"The Simulation entity is used to store the inputs and outputs related to the "

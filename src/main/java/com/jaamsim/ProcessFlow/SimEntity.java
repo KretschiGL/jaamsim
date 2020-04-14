@@ -20,14 +20,12 @@ package com.jaamsim.ProcessFlow;
 import java.util.ArrayList;
 
 import com.jaamsim.Graphics.DisplayEntity;
-import com.jaamsim.Graphics.LinkDisplayable;
-import com.jaamsim.basicsim.Entity;
 import com.jaamsim.input.Keyword;
 import com.jaamsim.input.StringInput;
 import com.jaamsim.input.StringListInput;
 import com.jaamsim.states.StateEntity;
 
-public class SimEntity extends StateEntity implements LinkDisplayable {
+public class SimEntity extends StateEntity {
 
 	@Keyword(description = "A list of states that will always appear in the output report, "
 			+ "even if no time is recorded for this state.",
@@ -85,17 +83,6 @@ public class SimEntity extends StateEntity implements LinkDisplayable {
 
 		EntityGen gen = (EntityGen) nextEnt;
 		gen.setPrototypeEntity(this);
-	}
-
-	// LinkDisplayable
-	@Override
-	public ArrayList<DisplayEntity> getDestinationEntities() {
-		return new ArrayList<>();
-	}
-
-	@Override
-	public ArrayList<DisplayEntity> getSourceEntities() {
-		return new ArrayList<>();
 	}
 
 }

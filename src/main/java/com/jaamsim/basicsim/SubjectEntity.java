@@ -1,6 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2016-2020 JaamSim Software Inc.
+ * Copyright (C) 2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-package com.jaamsim.Graphics;
+package com.jaamsim.basicsim;
 
 import java.util.ArrayList;
 
-public interface LinkDisplayable {
-	// Each link should only be registered once, so if an entity refers to another as a destination
-	// that entity should NOT refer back to the first as a source
-	public ArrayList<DisplayEntity> getDestinationEntities();
-	public ArrayList<DisplayEntity> getSourceEntities();
+public interface SubjectEntity {
+
+	/**
+	 * Records that the specified entity is monitoring this subject entity.
+	 * @param obs - observer entity monitoring this subject entity
+	 */
+	public void registerObserver(ObserverEntity obs);
+
+	/**
+	 * Notifies the observers that are monitoring this subject entity that a state change has
+	 * occurred.
+	 */
+	public void notifyObservers();
+
+	/**
+	 * Returns a list of the observers that are monitoring this subject entity.
+	 * @return list of observers
+	 */
+	public ArrayList<ObserverEntity> getObserverList();
+
 }

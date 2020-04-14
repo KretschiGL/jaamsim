@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2005-2013 Ausenco Engineering Canada Inc.
- * Copyright (C) 2016-2019 JaamSim Software Inc.
+ * Copyright (C) 2016-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,6 @@
 package com.jaamsim.ui;
 
 import java.awt.Point;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -40,7 +38,6 @@ import javax.swing.table.TableModel;
 import com.jaamsim.Samples.SampleListInput;
 import com.jaamsim.StringProviders.StringProvListInput;
 import com.jaamsim.basicsim.Entity;
-import com.jaamsim.basicsim.Simulation;
 import com.jaamsim.input.ColourInput;
 import com.jaamsim.input.FileInput;
 import com.jaamsim.input.Input;
@@ -101,30 +98,8 @@ public class EditBox extends FrameBox {
 		});
 		getContentPane().add(jTabbedFrame);
 
-		// Set the size and position of the editor
-		Simulation simulation = GUIFrame.getJaamSimModel().getSimulation();
-		GUIFrame gui = GUIFrame.getInstance();
-		Point pt = gui.getGlobalLocation(simulation.getInputEditorPos().get(0),
-				simulation.getInputEditorPos().get(1));
-		setLocation(pt);
-		setSize(simulation.getInputEditorSize().get(0), simulation.getInputEditorSize().get(1));
-
 		// Save changes to the editor's size and position
-		addComponentListener(new ComponentAdapter() {
-
-			@Override
-			public void componentMoved(ComponentEvent e) {
-				Point pt = gui.getRelativeLocation(getLocation().x, getLocation().y);
-				Simulation simulation = GUIFrame.getJaamSimModel().getSimulation();
-				simulation.setInputEditorPos(pt.x, pt.y);
-			}
-
-			@Override
-			public void componentResized(ComponentEvent e) {
-				Simulation simulation = GUIFrame.getJaamSimModel().getSimulation();
-				simulation.setInputEditorSize(getSize().width, getSize().height);
-			}
-		});
+		addComponentListener(FrameBox.getSizePosAdapter(this, "InputEditorSize", "InputEditorPos"));
 	}
 
 	public synchronized static EditBox getInstance() {
@@ -464,6 +439,13 @@ public static class EditTable extends JTable {
 		TableModel model = getModel();
 		Input<?> in = (Input<?>)model.getValueAt(rowIndex, 0);
 		return EditBox.getInputDesc(EditBox.getInstance().getCurrentEntity(), in);
+	}
+
+	@Override
+	public Point getToolTipLocation(MouseEvent e) {
+		int row = rowAtPoint(e.getPoint());
+		int y = getCellRect(row, 0, true).getLocation().y;
+		return new Point(col1Width, y);
 	}
 
 	@Override

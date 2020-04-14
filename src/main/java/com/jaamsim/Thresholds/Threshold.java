@@ -1,7 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2014 Ausenco Engineering Canada Inc.
- * Copyright (C) 2019 JaamSim Software Inc.
+ * Copyright (C) 2019-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,9 @@ import java.util.ArrayList;
 
 import com.jaamsim.DisplayModels.ShapeModel;
 import com.jaamsim.basicsim.Entity;
+import com.jaamsim.basicsim.ObserverEntity;
+import com.jaamsim.basicsim.SubjectEntity;
+import com.jaamsim.basicsim.SubjectEntityDelegate;
 import com.jaamsim.events.EventManager;
 import com.jaamsim.input.BooleanInput;
 import com.jaamsim.input.ColourInput;
@@ -30,7 +33,7 @@ import com.jaamsim.math.Color4d;
 import com.jaamsim.states.StateEntity;
 import com.jaamsim.units.DimensionlessUnit;
 
-public class Threshold extends StateEntity {
+public class Threshold extends StateEntity implements SubjectEntity {
 
 	@Keyword(description = "The colour of the threshold graphic when the threshold is open.",
 	         exampleList = { "green" })
@@ -53,6 +56,8 @@ public class Threshold extends StateEntity {
 	private boolean initialOpenValue;
 	private long openCount;
 	private long closedCount;
+
+	private final SubjectEntityDelegate subject = new SubjectEntityDelegate(this);
 
 	{
 		workingStateListInput.setHidden(true);
@@ -86,13 +91,29 @@ public class Threshold extends StateEntity {
 		closedCount = 0L;
 
 		userList.clear();
-		for (Entity each : getJaamSimModel().getClonesOfIterator(Entity.class)) {
-			if (each instanceof ThresholdUser) {
-				ThresholdUser tu = (ThresholdUser)each;
-				if (tu.getThresholds().contains(this))
-					userList.add(tu);
-			}
+		for (Entity each : getJaamSimModel().getClonesOfIterator(Entity.class, ThresholdUser.class)) {
+			ThresholdUser tu = (ThresholdUser) each;
+			if (tu.getThresholds().contains(this))
+				userList.add(tu);
 		}
+
+		// Clear the list of observers
+		subject.clear();
+	}
+
+	@Override
+	public void registerObserver(ObserverEntity obs) {
+		subject.registerObserver(obs);
+	}
+
+	@Override
+	public void notifyObservers() {
+		subject.notifyObservers();
+	}
+
+	@Override
+	public ArrayList<ObserverEntity> getObserverList() {
+		return subject.getObserverList();
 	}
 
 	public void setInitialOpenValue(boolean bool) {
@@ -139,6 +160,9 @@ public class Threshold extends StateEntity {
 		}
 
 		getJaamSimModel().updateThresholdUsers(userList);
+
+		// Notify any observers
+		notifyObservers();
 	}
 
 	@Override

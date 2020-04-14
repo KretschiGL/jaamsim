@@ -32,6 +32,7 @@ import com.jaamsim.basicsim.Entity;
 import com.jaamsim.basicsim.ErrorException;
 import com.jaamsim.basicsim.GUIListener;
 import com.jaamsim.basicsim.ObjectType;
+import com.jaamsim.basicsim.ObserverEntity;
 import com.jaamsim.datatypes.DoubleVector;
 import com.jaamsim.input.BooleanInput;
 import com.jaamsim.input.EntityInput;
@@ -58,7 +59,6 @@ import com.jaamsim.render.RenderUtils;
 import com.jaamsim.render.VisibilityInfo;
 import com.jaamsim.ui.EditBox;
 import com.jaamsim.ui.FrameBox;
-import com.jaamsim.ui.View;
 import com.jaamsim.units.AngleUnit;
 import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.DistanceUnit;
@@ -340,7 +340,8 @@ public class DisplayEntity extends Entity {
 		if (getDisplayModelList() != null) {
 			for (DisplayModel dm : getDisplayModelList()) {
 				if (!dm.canDisplayEntity(this)) {
-					error("Invalid DisplayModel: %s for this DisplayEntity", dm.getName());
+					throw new InputErrorException("Invalid DisplayModel: %s for this object",
+							dm.getName());
 				}
 			}
 		}
@@ -672,11 +673,11 @@ public class DisplayEntity extends Entity {
 	 * Returns the global transform with scale factor all rolled into a Matrix4d
 	 * @return
 	 */
-	public Mat4d getTransMatrix() {
+	public Mat4d getTransMatrix(Vec3d scale) {
 		Transform trans = getGlobalTrans();
 		Mat4d ret = new Mat4d();
 		trans.getMat4d(ret);
-		ret.scaleCols3(getSize());
+		ret.scaleCols3(scale);
 		return ret;
 	}
 
@@ -1132,26 +1133,42 @@ public class DisplayEntity extends Entity {
 		return tagMap;
 	}
 
+	public Vec3d getSourcePoint() {
+		return this.getSourcePoint(true);
+	}
+
+	public Vec3d getSinkPoint() {
+		return this.getSinkPoint(true);
+	}
+
 	/**
-	 * Returns the location at which entities arrive at this entity, if relevant.
+	 * Returns the global position at which entities depart from this entity, if relevant.
+	 * @param dir - true = normal direction, false = reverse direction
 	 * @return arrival location
 	 */
-	public Vec3d getSourcePoint() {
+	public Vec3d getSourcePoint(boolean dir) {
 		if (usePointsInput() && !pointsInput.getValue().isEmpty()) {
 			ArrayList<Vec3d> points = pointsInput.getValue();
-			return getGlobalPosition(points.get(points.size() - 1));
+			Vec3d localPt = points.get(0);
+			if (dir)
+				localPt = points.get(points.size() - 1);
+			return getGlobalPosition(localPt);
 		}
 		return getGlobalPosition();
 	}
 
 	/**
-	 * Returns the location at which entities depart from this entity, if relevant.
+	 * Returns the global position at which entities arrive at this entity, if relevant.
+	 * @param dir - true = normal direction, false = reverse direction
 	 * @return departure location
 	 */
-	public Vec3d getSinkPoint() {
+	public Vec3d getSinkPoint(boolean dir) {
 		if (usePointsInput() && !pointsInput.getValue().isEmpty()) {
 			ArrayList<Vec3d> points = pointsInput.getValue();
-			return getGlobalPosition(points.get(0));
+			Vec3d localPt = points.get(0);
+			if (!dir)
+				localPt = points.get(points.size() - 1);
+			return getGlobalPosition(localPt);
 		}
 		return getGlobalPosition();
 	}
@@ -1165,6 +1182,60 @@ public class DisplayEntity extends Entity {
 		if (usePointsInput())
 			return 0.05d;
 		return Math.max(getSize().x, getSize().y)/2.0 + 0.05d;
+	}
+
+	public ArrayList<ObserverEntity> getObserverList() {
+		return new ArrayList<>();
+	}
+
+	public ArrayList<DisplayEntity> getDestinationEntities() {
+		return new ArrayList<>();
+	}
+
+	public ArrayList<DisplayEntity> getSourceEntities() {
+		return new ArrayList<>();
+	}
+
+	public ArrayList<DirectedEntity> getDestinationDirEnts(boolean dir) {
+		if (dir)
+			return DirectedEntity.getList(getDestinationEntities(), true);
+		return new ArrayList<>();
+	}
+
+	public ArrayList<DirectedEntity> getSourceDirEnts(boolean dir) {
+		if (dir)
+			return DirectedEntity.getList(getSourceEntities(), true);
+		return new ArrayList<>();
+	}
+
+	public ArrayList<DirectedEntity> getNextList(boolean dir) {
+		ArrayList<DirectedEntity> ret = new ArrayList<>();
+		ret.addAll(getDestinationDirEnts(dir));
+		DirectedEntity thisDe = new DirectedEntity(this, dir);
+		for (DisplayEntity ent : getJaamSimModel().getClonesOfIterator(DisplayEntity.class)) {
+			if (ent.getSourceDirEnts(true).contains(thisDe)) {
+				ret.add(new DirectedEntity(ent, true));
+			}
+			if (ent.getSourceDirEnts(false).contains(thisDe)) {
+				ret.add(new DirectedEntity(ent, false));
+			}
+		}
+		return ret;
+	}
+
+	public ArrayList<DirectedEntity> getPreviousList(boolean dir) {
+		ArrayList<DirectedEntity> ret = new ArrayList<>();
+		ret.addAll(getSourceDirEnts(dir));
+		DirectedEntity thisDe = new DirectedEntity(this, dir);
+		for (DisplayEntity ent : getJaamSimModel().getClonesOfIterator(DisplayEntity.class)) {
+			if (ent.getDestinationDirEnts(true).contains(thisDe)) {
+				ret.add(new DirectedEntity(ent, true));
+			}
+			if (ent.getDestinationDirEnts(false).contains(thisDe)) {
+				ret.add(new DirectedEntity(ent, false));
+			}
+		}
+		return ret;
 	}
 
 	////////////////////////////////////////////////////////////////////////
@@ -1217,6 +1288,27 @@ public class DisplayEntity extends Entity {
 		}
 		Vec3d vec = getSize();
 		return Math.max(Math.max(vec.x, vec.y), vec.z);
+	}
+
+	@Output(name = "ObserverList",
+	 description = "The observers that are monitoring the state of this entity.",
+	    sequence = 5)
+	public ArrayList<ObserverEntity> getObserverList(double simTime) {
+		return getObserverList();
+	}
+
+	@Output(name = "NextList",
+	 description = "The entities that are immediately downstream from this entity.",
+	    sequence = 6)
+	public ArrayList<DirectedEntity> getNextList(double simTime) {
+		return getNextList(true);
+	}
+
+	@Output(name = "PreviousList",
+	 description = "The entities that are immediately upstream from this entity.",
+	    sequence = 7)
+	public ArrayList<DirectedEntity> getPreviousList(double simTime) {
+		return getPreviousList(true);
 	}
 
 }
