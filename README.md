@@ -53,8 +53,8 @@ in build/jars/
 
 We use a dual license approach:
 
-The source of JaamSim is Licensed under the Apache License, Version 2.0
-Extensions (everything in src/main/java/ch/) to this project is Licensed under the MIT License
+- The source of JaamSim is Licensed under the Apache License, Version 2.0
+- Extensions (everything in src/main/java/ch/) to this project is Licensed under the MIT License
 
 Since these two license are compatible with each other, we don't see any problems with that.
 We just prefer the MIT license over the Apache.
