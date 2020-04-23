@@ -1,4 +1,11 @@
-# What is this?
+# What's in here?
+
+This is an extension to JaamSim (see below) allowing to create and simulate production lines.
+The idea is, that we use simulation as part of the product development process.
+This project is part of my master thesis, and is work in progress.
+
+
+# What is this JaamSim?
 
 JaamSim is a Java based discrete-event simulation environment developed since 2002 and includes: 
 - drag-and-drop user interface 
@@ -44,31 +51,10 @@ in build/jars/
 
 # License
 
-JaamSim is Licensed under the Apache License, Version 2.0
+We use a dual license approach:
 
-# Contact
+The source of JaamSim is Licensed under the Apache License, Version 2.0
+Extensions (everything in src/main/java/ch/) to this project is Licensed under the MIT License
 
-For licensing and general inquiries:
-Dr. Harry King <d.harry.king@gmail.com>
-
-If you have any problems building the source or technical inquiries:
-Harvey Harrison <harvey.harrison@gmail.com>
-
-# Citing JaamSim
-
-[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.57118.svg)](http://dx.doi.org/10.5281/zenodo.57118)
-
-Please Cite JaamSim as the following, replacing the version with the version used in your paper.
-
-JaamSim Development Team (2016). JaamSim: Discrete-Event Simulation Software. Version 2016-14. URL http://jaamsim.com. doi:10.5281/zenodo.57118
-
-BibText entry:
-
-@Manual{,
-    title = {JaamSim: Discrete-Event Simulation Software},
-    author = {{JaamSim Development Team}},
-    year = {2016},
-    note = {Version 2016-14},
-    url = {http://jaamsim.com},
-    doi = {10.5281/zenodo.57118}
-  }
+Since these two license are compatible with each other, we don't see any problems with that.
+We just prefer the MIT license over the Apache.
