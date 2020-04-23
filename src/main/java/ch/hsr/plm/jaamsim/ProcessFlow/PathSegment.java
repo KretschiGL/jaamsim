@@ -9,6 +9,8 @@ import com.jaamsim.ProcessFlow.LinkedComponent;
 import com.jaamsim.Samples.SampleConstant;
 import com.jaamsim.Samples.SampleInput;
 import com.jaamsim.basicsim.EntityTarget;
+import com.jaamsim.events.Conditional;
+import com.jaamsim.events.EventHandle;
 import com.jaamsim.events.EventManager;
 import com.jaamsim.input.*;
 import com.jaamsim.math.Color4d;
@@ -88,7 +90,16 @@ public class PathSegment extends LinkedComponent implements LineEntity {
             double dt = simTime - this._lastTime;
             this._travelDist += dt * this._speed;
             this._lastTime = simTime;
-            return this._travelDist / totalDistance;
+            double relPos = this._travelDist / totalDistance;
+            if(relPos >= 1.0d) {
+                this._reachedEnd = true;
+            }
+            return relPos;
+        }
+
+        private boolean _reachedEnd = false;
+        boolean reachedEnd() {
+            return this._reachedEnd;
         }
     }
 
@@ -115,23 +126,39 @@ public class PathSegment extends LinkedComponent implements LineEntity {
         PathSegmentEntry entry = new PathSegmentEntry(ent, simTime, speed);
         this._entityMap.put(ent.getEntityNumber(), entry);
 
-        TargetReachedHandler t = new TargetReachedHandler(this, ent);
-        this.scheduleProcessTicks(ticks, 5, true, t, null); // Just defines when the entity should be at the end. Would be nice if path had an event for that.
+        TargetReachedHandler t = new TargetReachedHandler(this, entry);
+        this.startProcess(t);
 
         this.updateState();
     }
 
     private static class TargetReachedHandler  extends EntityTarget<PathSegment> {
-        private final DisplayEntity _entity;
 
-        TargetReachedHandler(PathSegment source, DisplayEntity entity) {
+        private final PathSegment.PathSegmentEntry _entry;
+
+        TargetReachedHandler(PathSegment source, PathSegment.PathSegmentEntry entry) {
             super(source, "onEndReached");
-            this._entity = entity;
+            this._entry = entry;
         }
 
         @Override
         public void process() {
-            this.ent.onEndReached(this._entity);
+            EventManager.waitUntil(new TargetReachedCondition(this._entry), null);
+            this.ent.onEndReached(this._entry._entity);
+        }
+    }
+
+    private static class TargetReachedCondition extends Conditional {
+
+        private final PathSegment.PathSegmentEntry _entry;
+
+        TargetReachedCondition(PathSegment.PathSegmentEntry entry) {
+            this._entry = entry;
+        }
+
+        @Override
+        public boolean evaluate() {
+            return this._entry.reachedEnd();
         }
     }
 
