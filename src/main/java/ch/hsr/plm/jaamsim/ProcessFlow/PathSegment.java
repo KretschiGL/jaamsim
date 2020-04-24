@@ -120,7 +120,6 @@ public class PathSegment extends LinkedComponent implements LineEntity {
 
         double simTime = this.getSimTime();
         double speed = this._maxSpeed.getValue().getMeanValue(simTime);
-        double duration = this.getGraphicalLength(simTime) / speed;
 
         PathSegmentEntry entry = new PathSegmentEntry(ent, simTime, speed);
         this._entityMap.put(ent.getEntityNumber(), entry);
