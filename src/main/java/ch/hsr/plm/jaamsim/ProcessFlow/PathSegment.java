@@ -38,10 +38,6 @@ public class PathSegment extends LinkedComponent implements LineEntity {
             exampleList = {"red"})
     private final ColourInput _colorInput;
 
-    @Keyword(description = "Show direction of the path.",
-             exampleList = {"TRUE"})
-    private final BooleanInput _showArrowHead;
-
     private final LinkedHashMap<Long, PathSegment.PathSegmentEntry> _entityMap = new LinkedHashMap<>();  // Entities being handled
 
     {
@@ -69,9 +65,6 @@ public class PathSegment extends LinkedComponent implements LineEntity {
         this.addInput(this._colorInput);
         this.addSynonym(this._colorInput, "Color");
         this.addSynonym(this._colorInput, "Colour");
-
-        this._showArrowHead = new BooleanInput("ShowArrowHead", FORMAT, true);
-        this.addInput(this._showArrowHead);
     }
 
     private static class PathSegmentEntry {
@@ -180,7 +173,7 @@ public class PathSegment extends LinkedComponent implements LineEntity {
     @Override
     public void updateGraphics(double simTime) {
 
-        if (!usePointsInput())
+        if (!this.usePointsInput())
             return;
 
         for (PathSegment.PathSegmentEntry entry : this._entityMap.values()) {
@@ -207,23 +200,26 @@ public class PathSegment extends LinkedComponent implements LineEntity {
     @Override
     public int getLineWidth() {
         PolylineModel model = getPolylineModel();
-        if (this._widthInput.isDefault() && model != null)
+        if (this._widthInput.isDefault() && model != null) {
             return model.getLineWidth();
+        }
         return this._widthInput.getValue();
     }
 
     @Override
     public Color4d getLineColour() {
         PolylineModel model = this.getPolylineModel();
-        if (this._colorInput.isDefault() && model != null)
+        if (this._colorInput.isDefault() && model != null) {
             return model.getLineColour();
+        }
         return this._colorInput.getValue();
     }
 
-    public PolylineModel getPolylineModel() {
+    private PolylineModel getPolylineModel() {
         DisplayModel dm = this.getDisplayModel();
-        if (dm instanceof PolylineModel)
+        if (dm instanceof PolylineModel) {
             return (PolylineModel) dm;
+        }
         return null;
     }
 
