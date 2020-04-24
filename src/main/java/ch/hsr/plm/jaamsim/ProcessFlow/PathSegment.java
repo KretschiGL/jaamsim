@@ -22,6 +22,14 @@ import java.util.LinkedHashMap;
 
 public class PathSegment extends LinkedComponent implements LineEntity {
 
+    @Keyword(description = "The default speed assumed for Entities that do not provide this information.",
+             exampleList = {"2.0 m/s"})
+    private final SampleInput _defaultSpeed;
+
+    @Keyword(description = "If TRUE, MaxSpeed is enforced on all Entities on the Path.",
+             exampleList = { "TRUE"} )
+    private final BooleanInput _hasSpeedLimit;
+
     @Keyword(description = "The maximum speed an entity can have on this segment.",
              exampleList = {"2.0 m/s"})
     private final SampleInput _maxSpeed;
@@ -38,7 +46,7 @@ public class PathSegment extends LinkedComponent implements LineEntity {
             exampleList = {"red"})
     private final ColourInput _colorInput;
 
-    private final LinkedHashMap<Long, PathSegment.PathSegmentEntry> _entityMap = new LinkedHashMap<>();  // Entities being handled
+    private final LinkedHashMap<Long, PathSegment.PathSegmentEntry> _entityMap = new LinkedHashMap<>();
 
     {
         this.displayModelListInput.clearValidClasses();
@@ -46,9 +54,20 @@ public class PathSegment extends LinkedComponent implements LineEntity {
 
         this.stateGraphics.setHidden(false);
 
+        double minSpeed = 0.001d;
+        double lightSpeed = 299792458; // Obviously
+
+        this._defaultSpeed = new SampleInput("DefaultSpeed", KEY_INPUTS, new SampleConstant(SpeedUnit.class, 1.0d));
+        this._defaultSpeed.setUnitType(SpeedUnit.class);
+        this._defaultSpeed.setValidRange(minSpeed, lightSpeed);
+        this.addInput(this._defaultSpeed);
+
+        this._hasSpeedLimit = new BooleanInput("HasSpeedLimit", KEY_INPUTS, true);
+        this.addInput(this._hasSpeedLimit);
+
         this._maxSpeed = new SampleInput("MaxSpeed", KEY_INPUTS, new SampleConstant(SpeedUnit.class, 1.0d));
         this._maxSpeed.setUnitType(SpeedUnit.class);
-        this._maxSpeed.setValidRange(.001d, 299792458); // Speed of light obviously
+        this._maxSpeed.setValidRange(minSpeed, lightSpeed);
         this.addInput(this._maxSpeed);
 
         this._rotateEntities = new BooleanInput("RotateEntities", FORMAT, true);
@@ -69,25 +88,36 @@ public class PathSegment extends LinkedComponent implements LineEntity {
 
     private static class PathSegmentEntry {
         final DisplayEntity _entity;
-        final double _speed;
+        final double _defaultSpeed;
+        final double _maxSpeed;
 
-        PathSegmentEntry(DisplayEntity e, double startTime, double speed) {
+        PathSegmentEntry(DisplayEntity e, double startTime, double defaultSpeed, double maxSpeed) {
             this._entity = e;
             this._lastTime = startTime;
-            this._speed = speed;
+            this._defaultSpeed = defaultSpeed;
+            this._maxSpeed = maxSpeed;
         }
 
         private double _lastTime;
         private double _travelDist = 0.0d;
         double getRelativePositionTo(double totalDistance, double simTime) {
             double dt = simTime - this._lastTime;
-            this._travelDist += dt * this._speed;
+            double speed = this.getEntitySpeed();
+            this._travelDist += dt * speed;
             this._lastTime = simTime;
             double relPos = this._travelDist / totalDistance;
             if(relPos >= 1.0d) {
                 this._reachedEnd = true;
             }
             return relPos;
+        }
+
+        private double getEntitySpeed() {
+            double speed = this._defaultSpeed;
+            if(this._maxSpeed <= 0) {
+                return speed;
+            }
+            return Math.min(speed, this._maxSpeed);
         }
 
         private boolean _reachedEnd = false;
@@ -112,9 +142,13 @@ public class PathSegment extends LinkedComponent implements LineEntity {
         super.addEntity(ent);
 
         double simTime = this.getSimTime();
-        double speed = this._maxSpeed.getValue().getMeanValue(simTime);
+        double defaultSpeed = this._defaultSpeed.getValue().getMeanValue(simTime);
+        double maxSpeed = -1d;
+        if(this._hasSpeedLimit.getValue()) {
+            maxSpeed = this._maxSpeed.getValue().getMeanValue(simTime);
+        }
 
-        PathSegmentEntry entry = new PathSegmentEntry(ent, simTime, speed);
+        PathSegmentEntry entry = new PathSegmentEntry(ent, simTime, defaultSpeed, maxSpeed);
         this._entityMap.put(ent.getEntityNumber(), entry);
 
         TargetReachedHandler t = new TargetReachedHandler(this, entry);
