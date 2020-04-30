@@ -53,12 +53,9 @@ public class PathSegment extends LinkedComponent implements LineEntity {
 
         this.stateGraphics.setHidden(false);
 
-        double minSpeed = 0.001d;
-        double lightSpeed = 299792458; // Obviously
-
         this._defaultSpeed = new SampleInput("DefaultSpeed", KEY_INPUTS, new SampleConstant(SpeedUnit.class, 1.0d));
         this._defaultSpeed.setUnitType(SpeedUnit.class);
-        this._defaultSpeed.setValidRange(minSpeed, lightSpeed);
+        this._defaultSpeed.setValidRange(Traveling.MIN_SPEED, Traveling.MAX_SPEED);
         this.addInput(this._defaultSpeed);
 
         this._hasSpeedLimit = new BooleanInput("HasSpeedLimit", KEY_INPUTS, true);
@@ -66,7 +63,7 @@ public class PathSegment extends LinkedComponent implements LineEntity {
 
         this._maxSpeed = new SampleInput("MaxSpeed", KEY_INPUTS, new SampleConstant(SpeedUnit.class, 1.0d));
         this._maxSpeed.setUnitType(SpeedUnit.class);
-        this._maxSpeed.setValidRange(minSpeed, lightSpeed);
+        this._maxSpeed.setValidRange(Traveling.MIN_SPEED, Traveling.MAX_SPEED);
         this.addInput(this._maxSpeed);
 
         this._rotateEntities = new BooleanInput("RotateEntities", FORMAT, true);
@@ -156,7 +153,7 @@ public class PathSegment extends LinkedComponent implements LineEntity {
         this.updateState();
     }
 
-    private static class TargetReachedHandler  extends EntityTarget<PathSegment> {
+    private static class TargetReachedHandler extends EntityTarget<PathSegment> {
 
         private final PathSegment.PathSegmentEntry _entry;
 
