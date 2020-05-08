@@ -9,7 +9,7 @@ import com.jaamsim.units.SpeedUnit;
 public class Vehicle extends StateUserEntity {
 
     @Keyword(description = "Speed used to move towards the destination.",
-             exampleList = {"2.0 m/s"})
+             exampleList = { "2.0 m/s" })
     private final SampleInput _speed;
 
     {
@@ -37,5 +37,10 @@ public class Vehicle extends StateUserEntity {
     @Override
     public void thresholdChanged() {
 
+    }
+
+    @Override
+    public void updateGraphics(double simTime) {
+        super.updateGraphics(simTime);
     }
 }
