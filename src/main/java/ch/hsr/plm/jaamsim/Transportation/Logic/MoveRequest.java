@@ -12,12 +12,12 @@ public class MoveRequest implements IRequest {
 
     private final ArrayList<Node> _destinations = new ArrayList<>();
     private int _currentDestination = 0;
-    private int _maxDestination = 1;
+    private int _maxDestination = 0;
 
     public MoveRequest(Node destination) {
         this(destination, DEFAULT_PRIORITY);
     }
-    
+
     public MoveRequest(Node destination, int priority) {
         this._destinations.add(destination);
         this.setPriority(priority);
@@ -55,17 +55,21 @@ public class MoveRequest implements IRequest {
         return this._destinations.get(this._currentDestination);
     }
 
+    private final Object _mutex = new Object();
+
     @Override
     public boolean reached(Node node) {
-        if(node != this.getCurrentDestination()) {
-            return false;
+        synchronized (this._mutex) {
+            if (node != this.getCurrentDestination()) {
+                return false;
+            }
+            if (this._currentDestination < this._maxDestination) {
+                this._currentDestination++;
+                return false;
+            }
+            this._isCompleted = true;
+            return true;
         }
-        if(this._currentDestination < this._maxDestination) {
-            this._currentDestination++;
-            return false;
-        }
-        this._isCompleted = true;
-        return true;
     }
 
     @Override

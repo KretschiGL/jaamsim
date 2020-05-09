@@ -13,34 +13,49 @@ public class DirectRoute implements IRoute {
         this._movable = movable;
         this._destination = destination;
         this._targetPosition = destination.getGlobalPosition();
-        Vec3d direction = new Vec3d();
-        direction.sub3(this._targetPosition, movable.getCurrentGlobalPosition());
-        direction.normalize3();
-        this._direction = direction;
-        this._orientation.z = Math.atan2(direction.y, direction.x);
     }
 
     private final Vec3d _targetPosition;
 
+    private final double HIT_RANGE = 0.1d; // 10 Centimeter
+
     @Override
     public boolean destinationReached() {
-        return this._targetPosition.near3(this._movable.getCurrentGlobalPosition());
+        Vec3d target = new Vec3d(this._targetPosition);
+        target.sub3(this._movable.getCurrentGlobalPosition());
+        return target.mag3() < HIT_RANGE;
     }
 
     private Vec3d _direction;
     private Vec3d _orientation = new Vec3d();
 
-    private double _lastSimTime;
+    private double _lastSimTime = -1;
 
     @Override
-    public boolean updatePosition(double simTime) {
-        double dt = simTime - this._lastSimTime;
-        double change = dt * this._movable.getCurrentSpeed(simTime);
-        Vec3d movement = new Vec3d(this._direction);
+    public void updatePosition(double simTime) {
+        double change = 0.0d;
+        if(this._lastSimTime > 0) {
+            double dt = simTime - this._lastSimTime;
+            change = dt * this._movable.getCurrentSpeed(simTime);
+        }
+        Vec3d path = new Vec3d(this._targetPosition);
+        path.sub3(this._movable.getCurrentGlobalPosition());
+        Vec3d movement = new Vec3d(path);
+        movement.normalize3();
         movement.scale3(change);
-        movement.add3(this._movable.getCurrentGlobalPosition());
+        this._orientation.z = Math.atan2(movement.y, movement.x);
+
+        if(movement.mag3() < path.mag3()) {
+            movement.add3(this._movable.getCurrentGlobalPosition());
+        } else {
+            movement.set3(this._targetPosition);
+        }
         this._movable.updateGlobalPosition(movement, this._orientation);
         this._lastSimTime = simTime;
-        return this.destinationReached();
+    }
+
+    @Override
+    public Node getDestination() {
+        return this._destination;
     }
 }

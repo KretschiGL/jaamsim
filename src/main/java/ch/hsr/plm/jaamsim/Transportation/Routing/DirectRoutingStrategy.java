@@ -2,6 +2,7 @@ package ch.hsr.plm.jaamsim.Transportation.Routing;
 
 import ch.hsr.plm.jaamsim.Transportation.IMovable;
 import ch.hsr.plm.jaamsim.Transportation.Node;
+import com.jaamsim.basicsim.JaamSimModel;
 
 public class DirectRoutingStrategy implements IRoutingStrategy {
 

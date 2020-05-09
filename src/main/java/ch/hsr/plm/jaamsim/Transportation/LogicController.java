@@ -5,6 +5,7 @@ import ch.hsr.plm.jaamsim.Transportation.Logic.RequestHandlingFactory;
 import ch.hsr.plm.jaamsim.Transportation.Logic.RequestHandlingStrategies;
 import com.jaamsim.input.EnumInput;
 import com.jaamsim.input.Keyword;
+import com.jaamsim.input.Output;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -16,8 +17,15 @@ public class LogicController extends RequestDispatcher {
     private final EnumInput<RequestHandlingStrategies> _requestHandling;
 
     {
-        this._requestHandling = new EnumInput<>(RequestHandlingStrategies.class, "Request Dispatching", KEY_INPUTS, RequestHandlingStrategies.FIFO);
+        this._requestHandling = new EnumInput<>(RequestHandlingStrategies.class, "RequestDispatching", KEY_INPUTS, RequestHandlingStrategies.FIFO);
         this.addInput(this._requestHandling);
+    }
+
+    @Override
+    public void earlyInit() {
+        super.earlyInit();
+        this._pool.clear();
+        this._requests.clear();
     }
 
     private IRequestHandlingStrategy _requestHandlingStrategy;
@@ -33,30 +41,38 @@ public class LogicController extends RequestDispatcher {
         if(dispatchable == null) {
             return;
         }
-        if(this._pool.contains(dispatchable)) {
-            return;
+        synchronized (this._pool) {
+            if (this._pool.contains(dispatchable)) {
+                return;
+            }
+            this._pool.add(dispatchable);
         }
-        this._pool.add(dispatchable);
     }
 
     public void unregister(IDispatchable dispatchable) {
         if(dispatchable == null) {
             return;
         }
-        this._pool.remove(dispatchable);
+        synchronized (this._pool) {
+            this._pool.remove(dispatchable);
+        }
     }
 
     private final LinkedList<IRequest> _requests = new LinkedList<>();
 
     @Override
     public void enqueue(IRequest request) {
-        this._requests.addLast(request);
+        synchronized (this._requests) {
+            this._requests.addLast(request);
+        }
         this.dispatch();
     }
 
     @Override
     public void revoke(IRequest request) {
-        this._requests.removeIf(r -> r.equals(request));
+        if(this._requests.removeIf(r -> r.equals(request))) {
+            request.dispose();
+        }
     }
 
     public void notifyAvailability(IDispatchable dispatchable) {
@@ -68,14 +84,16 @@ public class LogicController extends RequestDispatcher {
 
     private void dispatch() {
         synchronized (this._requests) {
-            if(this._requests.size() == 0) {
+            if(this._requests.isEmpty()) {
                 return;
             }
             IDispatchable dispatchable = this.findDispatchableFor(this._requestHandlingStrategy.peekNext(this._requests));
             if (dispatchable == null) {
                 return;
             }
-            dispatchable.dispatch(this._requestHandlingStrategy.pollNext(this._requests));
+            IRequest request = this._requestHandlingStrategy.pollNext(this._requests);
+            dispatchable.dispatch(request);
+            this.onDispatched(dispatchable);
         }
     }
 
@@ -93,13 +111,15 @@ public class LogicController extends RequestDispatcher {
 
     private void dispatch(IDispatchable dispatchable) {
         synchronized (this._requests) {
-            if(this._requests.size() == 0) {
+            if(this._requests.isEmpty()) {
                 return;
             }
-            if (this.canHandle(this._requestHandlingStrategy.peekNext(this._requests), dispatchable)) {
+            if (!this.canHandle(this._requestHandlingStrategy.peekNext(this._requests), dispatchable)) {
                 return;
             }
-            dispatchable.dispatch(this._requestHandlingStrategy.pollNext(this._requests));
+            IRequest request = this._requestHandlingStrategy.pollNext(this._requests);
+            dispatchable.dispatch(request);
+            this.onDispatched(dispatchable);
         }
     }
 
@@ -113,10 +133,8 @@ public class LogicController extends RequestDispatcher {
         return true;
     }
 
-    @Override
-    public void earlyInit() {
-        super.earlyInit();
-        this._pool.clear();
+    protected void onDispatched(IDispatchable dispatchable) {
+
     }
 
     @Override
@@ -127,6 +145,11 @@ public class LogicController extends RequestDispatcher {
     @Override
     public void thresholdChanged() {
 
+    }
+
+    @Output(name="Requests in Queue")
+    public int numberOfRequestsInQueue(double simTime) {
+        return this._requests.size();
     }
 
     @Override
