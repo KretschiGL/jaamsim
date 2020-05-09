@@ -5,6 +5,7 @@ public interface IRequest {
 
     boolean isCompleted();
     Node getCurrentDestination();
+    boolean reached(Node node);
 
-
+    void dispose();
 }
