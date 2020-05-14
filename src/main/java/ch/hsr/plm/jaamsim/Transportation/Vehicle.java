@@ -7,8 +7,7 @@ import ch.hsr.plm.jaamsim.Transportation.Routing.RoutingStrategies;
 import com.jaamsim.Samples.SampleConstant;
 import com.jaamsim.Samples.SampleInput;
 import com.jaamsim.basicsim.EntityTarget;
-import com.jaamsim.events.Conditional;
-import com.jaamsim.events.EventManager;
+import com.jaamsim.events.ProcessTarget;
 import com.jaamsim.input.*;
 import com.jaamsim.math.Vec3d;
 import com.jaamsim.units.SpeedUnit;
@@ -54,7 +53,6 @@ public class Vehicle extends RequestDispatcher implements IMovable, ISteerable, 
     @Override
     public void earlyInit() {
         super.earlyInit();
-        this._currentRequest = null;
         this._currentRoute = null;
     }
 
@@ -145,9 +143,10 @@ public class Vehicle extends RequestDispatcher implements IMovable, ISteerable, 
         this._activeController.revoke(request);
     }
 
+    private boolean _isDispatched = false;
     @Override
     public boolean isDispatched() {
-        return this._currentRequest != null;
+        return this._isDispatched;
     }
 
     @Override
@@ -158,20 +157,34 @@ public class Vehicle extends RequestDispatcher implements IMovable, ISteerable, 
         return true;
     }
 
-    private IRequest _currentRequest;
     @Override
     public void dispatch(IRequest request) {
-        this._currentRequest = request;
+        this._isDispatched = true;
         this.updateState();
-        this.move();
+        this.startProcess(new HandleRequest(this , request,"handleRequest"));
+    }
+
+    private static final class HandleRequest extends EntityTarget<Vehicle> {
+
+        private final IRequest _request;
+
+        public HandleRequest(Vehicle ent, IRequest request, String method) {
+            super(ent, method);
+            this._request = request;
+        }
+
+        @Override
+        public void process() {
+            this.ent.moveTo(this._request.getCurrentDestination());
+        }
     }
 
     private IRoute _currentRoute;
 
-    private void move() {
-        this._currentRoute = this._routingStrategy.getRouteTo(this._currentRequest.getCurrentDestination(), this);
-        DestinationReachedHandler t = new DestinationReachedHandler(this);
-        this.startProcess(t);
+    private void moveTo(Node destination) {
+        this._currentRoute = this._routingStrategy.getRouteTo(destination, this);
+        double destinationReachedTime = this._currentRoute.getDistance() / this.getCurrentSpeed(this.getSimTime());
+        this.scheduleProcess(destinationReachedTime, 1, new DestinationReachedHandler(this));
     }
 
     private static class DestinationReachedHandler extends EntityTarget<Vehicle> {
@@ -182,46 +195,47 @@ public class Vehicle extends RequestDispatcher implements IMovable, ISteerable, 
 
         @Override
         public void process() {
-            EventManager.waitUntil(new DestinationReachedCondition(this.ent), null);
             this.ent.onDestinationReached();
         }
     }
 
-    private static class DestinationReachedCondition extends Conditional {
-
-        private Vehicle _vehicle;
-
-        DestinationReachedCondition(Vehicle vehicle) {
-            this._vehicle = vehicle;
-        }
-
-        @Override
-        public boolean evaluate() {
-            if(this._vehicle._currentRoute == null) {
-                return true;
-            }
-            return this._vehicle._currentRoute.destinationReached();
-        }
+    private void onDestinationReached() {
+        Node destination = this._currentRoute.getDestination();
+        this._currentRoute = null;
+        this._activeController.reachedDestination(this, destination);
     }
 
-    private void onDestinationReached() {
-        boolean requestCompleted = this._currentRequest.reached(this._currentRoute.getDestination());
-        if (!requestCompleted) {
-            this.move();
-            return;
-        }
-        this.onRequestCompleted();
+    @Override
+    public void onHandle(IRequest request, Node node) {
+
+    }
+
+    @Override
+    public void onHandleCompleted(IRequest request, Node node) {
+
+    }
+
+    @Override
+    public void onRequestCompleted(IRequest request) {
+        this._isDispatched = false;
         this.updateState();
+        this.startProcess(vehicleAvailable);
+    }
+
+    private ProcessTarget vehicleAvailable = new EntityTarget<>(this, "vehicleAvailable") {
+
+        @Override
+        public void process() {
+            this.ent.onVehicleAvailable();
+        }
+    };
+
+    private void onVehicleAvailable() {
         this._activeController.notifyAvailability(this);
     }
 
-    private void onRequestCompleted(){
-        this._currentRequest.dispose();
-        this._currentRequest = null;
-    }
-
     private void updateState() {
-        if(this._currentRequest != null) {
+        if(this.isDispatched()) {
             this.setPresentState(STATE_WORKING);
         } else {
             this.setPresentState(STATE_IDLE);

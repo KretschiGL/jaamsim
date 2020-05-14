@@ -1,6 +1,7 @@
 package ch.hsr.plm.jaamsim.Transportation;
 
 import ch.hsr.plm.jaamsim.Transportation.Logic.MoveRequest;
+import com.jaamsim.basicsim.EntityTarget;
 import com.jaamsim.input.EntityListInput;
 import com.jaamsim.input.Keyword;
 
@@ -20,31 +21,45 @@ public class NodeSequenceLogicController extends LogicController {
     public void startUp() {
         super.startUp();
 
-        this.generateTour();
+        this.scheduleProcess(2, 1, new GenerateTour(this));
     }
 
-    private boolean _gneratingTour = false;
+    private static final class GenerateTour extends EntityTarget<NodeSequenceLogicController> {
+
+        public GenerateTour(NodeSequenceLogicController ent) {
+            super(ent, "generateTour");
+        }
+
+        @Override
+        public void process() {
+            this.ent.generateTour();
+        }
+    }
+
+    private boolean _generatingTour = false;
     private void generateTour() {
-        if(this._gneratingTour) {
+        if(this._generatingTour) {
             return;
         }
         try {
-            this._gneratingTour = true;
+            this._generatingTour = true;
             for (Node node : this._sequence.getValue()) {
                 MoveRequest request = new MoveRequest(node);
                 this.enqueue(request);
             }
         } finally {
-            this._gneratingTour = false;
+            this._generatingTour = false;
         }
-
     }
 
     @Override
     protected void onDispatched(IDispatchable dispatchable) {
+        if(this._generatingTour) {
+            return;
+        }
         if(this.numberOfRequestsInQueue(this.getSimTime()) != 0) {
             return;
         }
-        this.generateTour();
+        this.startProcess(new GenerateTour(this));
     }
 }

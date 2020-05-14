@@ -2,6 +2,7 @@ package ch.hsr.plm.jaamsim.Transportation.Routing;
 
 import ch.hsr.plm.jaamsim.Transportation.IMovable;
 import ch.hsr.plm.jaamsim.Transportation.Node;
+import com.jaamsim.events.EventManager;
 import com.jaamsim.math.Vec3d;
 
 public class DirectRoute implements IRoute {
@@ -12,44 +13,41 @@ public class DirectRoute implements IRoute {
     public DirectRoute(IMovable movable, Node destination) {
         this._movable = movable;
         this._destination = destination;
-        this._targetPosition = destination.getGlobalPosition();
+
+        this._lastSimTime = EventManager.simSeconds();
+
+        Vec3d dist = new Vec3d(destination.getGlobalPosition());
+        dist.sub3(movable.getCurrentGlobalPosition());
+        this._distance = dist.mag3();
+        dist.normalize3();
+        this._direction = dist;
+        this._orientation.z = Math.atan2(dist.y, dist.x);
     }
 
-    private final Vec3d _targetPosition;
-
-    private final double HIT_RANGE = 0.1d; // 10 Centimeter
+    private final double _distance;
+    private final Vec3d _direction;
+    private final Vec3d _orientation = new Vec3d();
 
     @Override
-    public boolean destinationReached() {
-        Vec3d target = new Vec3d(this._targetPosition);
-        target.sub3(this._movable.getCurrentGlobalPosition());
-        return target.mag3() < HIT_RANGE;
+    public double getDistance() {
+        return this._distance;
     }
 
-    private Vec3d _direction;
-    private Vec3d _orientation = new Vec3d();
+    private boolean _destinationReached = false;
+    @Override
+    public boolean destinationReached() {
+        return this._destinationReached;
+    }
 
-    private double _lastSimTime = -1;
+    private double _lastSimTime;
 
     @Override
     public void updatePosition(double simTime) {
-        double change = 0.0d;
-        if(this._lastSimTime > 0) {
-            double dt = simTime - this._lastSimTime;
-            change = dt * this._movable.getCurrentSpeed(simTime);
-        }
-        Vec3d path = new Vec3d(this._targetPosition);
-        path.sub3(this._movable.getCurrentGlobalPosition());
-        Vec3d movement = new Vec3d(path);
-        movement.normalize3();
+        double dt = simTime - this._lastSimTime;
+        double change = dt * this._movable.getCurrentSpeed(simTime);
+        Vec3d movement = new Vec3d(this._direction);
         movement.scale3(change);
-        this._orientation.z = Math.atan2(movement.y, movement.x);
-
-        if(movement.mag3() < path.mag3()) {
-            movement.add3(this._movable.getCurrentGlobalPosition());
-        } else {
-            movement.set3(this._targetPosition);
-        }
+        movement.add3(this._movable.getCurrentGlobalPosition());
         this._movable.updateGlobalPosition(movement, this._orientation);
         this._lastSimTime = simTime;
     }
