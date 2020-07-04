@@ -51,12 +51,10 @@ import com.jaamsim.basicsim.JaamSimModel;
 import com.jaamsim.basicsim.ObjectType;
 import com.jaamsim.basicsim.Simulation;
 import com.jaamsim.datatypes.DoubleVector;
-import com.jaamsim.events.EventManager;
 import com.jaamsim.math.Vec3d;
 import com.jaamsim.ui.LogBox;
 import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.DistanceUnit;
-import com.jaamsim.units.TimeUnit;
 import com.jaamsim.units.Unit;
 
 public class InputAgent {
@@ -69,7 +67,7 @@ public class InputAgent {
 	                                            + "period.\n "
 	                                            + "Name: %s";
 	private static final String INP_ERR_BADPARENT = "The parent entity [%s] has not been defined.";
-	public static final char[] INVALID_ENTITY_CHARS = new char[]{' ', '\t', '\n', '{', '}', '\'', '"', '[', ']', '#','.'};
+	static final char[] INVALID_ENTITY_CHARS = new char[]{' ', '\t', '\n', '{', '}', '\'', '"', '[', ']', '#','.'};
 
 	private static final String[] EARLY_KEYWORDS = {"UnitType", "UnitTypeList", "OutputUnitType", "SecondaryUnitType", "DataFile", "AttributeDefinitionList", "CustomOutputList"};
 	private static final String[] GRAPHICS_PALETTES = {"Graphics Objects", "View", "Display Models"};
@@ -885,32 +883,6 @@ public class InputAgent {
 		}
 	}
 
-	public static final void trace(JaamSimModel simModel, int indent, Entity ent, String fmt, Object... args) {
-		// Print a TIME header every time time has advanced
-		long traceTick = EventManager.simTicks();
-		if (simModel.getLastTickForTrace() != traceTick) {
-			double unitFactor = Unit.getDisplayedUnitFactor(TimeUnit.class);
-			String unitString = Unit.getDisplayedUnit(TimeUnit.class);
-			System.out.format(" \nTIME = %.6f %s,  TICKS = %d\n",
-					EventManager.current().ticksToSeconds(traceTick) / unitFactor, unitString,
-					traceTick);
-			simModel.setLastTickForTrace(traceTick);
-		}
-
-		// Create an indent string to space the lines
-		StringBuilder str = new StringBuilder("");
-		for (int i = 0; i < indent; i++)
-			str.append("   ");
-
-		// Append the Entity name if provided
-		if (ent != null)
-			str.append(ent.toString()).append(".");
-
-		str.append(String.format(fmt, args));
-		System.out.println(str.toString());
-		System.out.flush();
-	}
-
 	/**
 	 * Writes a warning message to standard error, the Log Viewer, and the Log File.
 	 * @param fmt - format string for the warning message
@@ -1041,7 +1013,7 @@ public class InputAgent {
 		// Prepare a sorted list of all the entities that were edited
 		ArrayList<Entity> entityList = new ArrayList<>();
 		for (Entity ent : simModel.getClonesOfIterator(Entity.class)) {
-			if (!ent.isEdited() || ent.isGenerated())
+			if (!ent.isEdited() || !ent.isRegistered())
 				continue;
 			if (ent instanceof EntityLabel && !((EntityLabel) ent).getShow()
 					&& ((EntityLabel) ent).isDefault())
@@ -1179,21 +1151,7 @@ public class InputAgent {
 		if (in == null || in.isDefault()) {
 			return;
 		}
-		StringBuilder sb = new StringBuilder();
-		for (NamedExpression ne : in.getValue()) {
-			String str;
-			Class<? extends Unit> ut = ne.getUnitType();
-			if (ut == DimensionlessUnit.class) {
-				str = String.format(" { %s  0 }", ne.getName());
-			}
-			else {
-				str = String.format(" { %s  0[%s]  %s }",
-						ne.getName(), Unit.getSIUnit(ut), ut.getSimpleName());
-			}
-			sb.append(str);
-		}
-		file.format("%s %s {%s }%n",
-	            ent.getName(), in.getKeyword(), sb.toString());
+		file.format("%s %s { %s }%n", ent.getName(), in.getKeyword(), in.getStubDefinition());
 	}
 
 	public static void printRunOutputHeaders(JaamSimModel simModel, PrintStream outStream) {

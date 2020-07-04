@@ -50,6 +50,7 @@ public class Combine extends LinkedService {
 	{
 		waitQueue.setHidden(true);
 		match.setHidden(true);
+		watchList.setHidden(true);
 
 		serviceTime = new SampleInput("ServiceTime", KEY_INPUTS, new SampleConstant(TimeUnit.class, 0.0));
 		serviceTime.setUnitType(TimeUnit.class);
@@ -118,7 +119,8 @@ public class Combine extends LinkedService {
 				continue;
 			}
 
-			this.registerEntity(ent);
+			receiveEntity(ent);
+			setEntityState(ent);
 			processedEntityList[i] = ent;
 		}
 

@@ -1,6 +1,7 @@
 /*
  * JaamSim Discrete Event Simulation
  * Copyright (C) 2002-2014 Ausenco Engineering Canada Inc.
+ * Copyright (C) 2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,7 +51,6 @@ final class Process extends Thread {
 
 	private boolean dieFlag;
 	private boolean activeFlag;
-	private boolean inUserCallback;
 
 	// Initialize the storage for the pooled Processes
 	static {
@@ -140,7 +140,6 @@ final class Process extends Thread {
 		target = targ;
 		activeFlag = false;
 		dieFlag = false;
-		inUserCallback = false;
 	}
 
 	// Pull a process from the pool and have it attempt to execute events from the
@@ -250,18 +249,5 @@ final class Process extends Thread {
 	synchronized final void postCapture() {
 		activeFlag = true;
 		hasNext = (nextProcess != null);
-	}
-
-	final void beginCallbacks() {
-		inUserCallback = true;
-	}
-
-	final void endCallbacks() {
-		inUserCallback = false;
-	}
-
-	final void checkCallback() {
-		if (inUserCallback)
-			throw new ProcessError("Event Control attempted from inside a user callback");
 	}
 }
