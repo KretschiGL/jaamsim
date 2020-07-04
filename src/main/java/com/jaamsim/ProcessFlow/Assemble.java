@@ -79,6 +79,7 @@ public class Assemble extends LinkedService implements EntityGen {
 	{
 		waitQueue.setHidden(true);
 		match.setHidden(true);
+		watchList.setHidden(true);
 
 		serviceTime = new SampleInput("ServiceTime", KEY_INPUTS, new SampleConstant(TimeUnit.class, 0.0));
 		serviceTime.setUnitType(TimeUnit.class);
@@ -195,7 +196,8 @@ public class Assemble extends LinkedService implements EntityGen {
 		assembledEntity.earlyInit();
 
 		// Set the obj output to the assembled part
-		this.registerEntity(assembledEntity);
+		receiveEntity(assembledEntity);
+		setEntityState(assembledEntity);
 
 		// Set the state for the assembled part
 		if (!stateAssignment.isDefault() && assembledEntity instanceof StateEntity) {

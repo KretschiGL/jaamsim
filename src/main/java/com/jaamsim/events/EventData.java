@@ -14,27 +14,33 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.jaamsim.ui;
+package com.jaamsim.events;
 
-import java.awt.Component;
+public class EventData {
 
-import javax.swing.JTable;
+	public final long ticks;
+	public final int priority;
+	public final String description;
 
-public class EventViewerCellRenderer extends DefaultCellRenderer {
-
-	public EventViewerCellRenderer() {}
+	public EventData(long tk, int pri, String desc) {
+		ticks = tk;
+		priority = pri;
+		description = desc;
+	}
 
 	@Override
-	public Component getTableCellRendererComponent(JTable table, Object value,
-	                                               boolean isSelected, boolean hasFocus,
-	                                               int row, int column) {
-		Component cell = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+	public boolean equals(Object obj) {
+		if (obj == null) return false;
+		if (obj == this) return true;
+		if (!(obj instanceof EventData)) return false;
+		EventData data = (EventData) obj;
+		return (ticks == data.ticks) && (priority == data.priority)
+				&& description.equals(data.description);
+	}
 
-		if (row == table.getSelectedRow())
-			return cell;
-
-		cell.setBackground(EventViewer.getColor(row));
-		return cell;
+	@Override
+	public String toString() {
+		return String.format("[%s, %s, %s]", ticks, priority, description);
 	}
 
 }

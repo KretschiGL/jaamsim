@@ -75,6 +75,7 @@ public class EntityGenerator extends LinkedService implements EntityGen {
 		stateAssignment.setHidden(true);
 		waitQueue.setHidden(true);
 		match.setHidden(true);
+		watchList.setHidden(true);
 		processPosition.setHidden(true);
 		opportunisticMaintenanceList.setHidden(true);
 		opportunisticBreakdownList.setHidden(true);
@@ -180,7 +181,8 @@ public class EntityGenerator extends LinkedService implements EntityGen {
 			ent.earlyInit();
 
 			// Set the obj output to the assembled part
-			this.registerEntity(ent);
+			receiveEntity(ent);
+			setEntityState(ent);
 
 			// Send the entity to the next element in the chain
 			this.sendToNextComponent(ent);

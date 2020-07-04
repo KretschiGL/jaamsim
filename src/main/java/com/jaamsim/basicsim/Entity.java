@@ -18,7 +18,6 @@
 package com.jaamsim.basicsim;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 
@@ -336,22 +335,60 @@ public class Entity {
 	}
 
 	/**
-	 * Copy the inputs for each keyword to the caller.  Any inputs that have already
-	 * been set for the caller are overwritten by those for the entity being copied.
+	 * Copy the inputs for each keyword to the caller.
 	 * @param ent = entity whose inputs are to be copied
 	 */
 	public void copyInputs(Entity ent) {
+		for (int seq = 0; seq < 2; seq++) {
+			copyInputs(ent, seq, false);
+		}
+	}
+
+	/**
+	 * Copy the inputs for the keywords with the specified sequence number to the caller.
+	 * @param ent = entity whose inputs are to be copied
+	 * @param seq = sequence number for the keyword (0 = early keyword, 1 = normal keyword)
+	 * @param bool = true if each copied input is locked after its value is set
+	 */
+	public void copyInputs(Entity ent, int seq, boolean bool) {
+
+		// Provide stub definitions for the custom outputs
+		if (seq == 0) {
+			NamedExpressionListInput in = (NamedExpressionListInput) ent.getInput("CustomOutputList");
+			if (in != null && !in.isDefault()) {
+				KeywordIndex kw = InputAgent.formatInput(in.getKeyword(), in.getStubDefinition());
+				InputAgent.apply(this, kw);
+			}
+		}
+
+		// Apply the inputs based on the source entity
 		ArrayList<String> tmp = new ArrayList<>();
-		for (Input<?> sourceInput : ent.inpList) {
+		for (Input<?> sourceInput : ent.getEditableInputs()) {
+			if (sourceInput.isDefault() || sourceInput.isSynonym()
+					|| sourceInput.getSequenceNumber() != seq)
+				continue;
 			String key = sourceInput.getKeyword();
 			Input<?> targetInput = this.getInput(key);
-			if (sourceInput.isDefault() || sourceInput.isSynonym() || targetInput == null) {
+			if (targetInput == null)
 				continue;
-			}
+
 			tmp.clear();
 			sourceInput.getValueTokens(tmp);
+
+			// Replace references to the parent entity
+			if (this.getParent() != ent.getParent()) {
+				String oldParent = ent.getParent().getName();
+				String newParent = this.getParent().getName();
+				for (int i = 0; i < tmp.size(); i++) {
+					String str = tmp.get(i);
+					str = str.replace(oldParent, newParent);
+					tmp.set(i, str);
+				}
+			}
+
 			KeywordIndex kw = new KeywordIndex(key, tmp, null);
 			InputAgent.apply(this, targetInput, kw);
+			targetInput.setLocked(bool);
 		}
 	}
 
@@ -428,10 +465,9 @@ public class Entity {
 
 		// Build up the name back to front
 		StringBuilder sb = new StringBuilder();
-		Collections.reverse(revNames);
-		for (int i = 0; i < revNames.size(); ++i) {
+		for (int i = revNames.size() - 1; i >= 0; i--) {
 			sb.append(revNames.get(i));
-			if (i < revNames.size()-1) {
+			if (i > 0) {
 				sb.append('.');
 			}
 		}
@@ -451,17 +487,6 @@ public class Entity {
 	}
 
 	public void removeChild(Entity child) {
-		error("Entity [%s] may not have children", getName());
-	}
-
-	/**
-	 * Called when an entity which is a child of this entity has been renamed
-	 * Note: Should only be called from JaamSimModel.renameEntity()
-	 * @param e
-	 * @param oldName
-	 * @param newName
-	 */
-	public void renameChild(Entity e, String oldName, String newName) {
 		error("Entity [%s] may not have children", getName());
 	}
 
@@ -682,7 +707,7 @@ public class Entity {
 	 * @param args - trace data
 	 */
 	public void trace(int indent, String fmt, Object... args) {
-		InputAgent.trace(simModel, indent, this, fmt, args);
+		simModel.trace(indent, this, fmt, args);
 	}
 
 	/**
@@ -693,7 +718,7 @@ public class Entity {
 	 * @param args - trace data
 	 */
 	public void traceLine(int indent, String fmt, Object... args) {
-		InputAgent.trace(simModel, indent, null, fmt, args);
+		simModel.trace(indent, null, fmt, args);
 	}
 
 	/**
@@ -824,6 +849,8 @@ public class Entity {
 			throw new ExpError(null, -1, "Invalid attribute name for %s: %s", this, name);
 
 		ExpResult assignValue = null;
+
+		// Collection Attribute
 		if (indices != null) {
 			ExpResult attribValue = h.getValue(getSimTime(), ExpResult.class);
 			if (attribValue.type != ExpResType.COLLECTION) {
@@ -838,13 +865,17 @@ public class Entity {
 				throw new ExpError(err.source, err.pos, "Error during assignment to %s: %s",
 						this, err.getMessage());
 			}
-		} else {
-			assignValue = value.getCopy();
 		}
 
-		if (value.type == ExpResType.NUMBER && h.getUnitType() != value.unitType)
-			throw new ExpError(null, -1, "Invalid unit returned by an expression. Received: %s, expected: %s",
-					value.unitType.getSimpleName(), h.getUnitType().getSimpleName());
+		// Single-Valued Attribute
+		else {
+			if (value.type == ExpResType.NUMBER && h.getUnitType() != value.unitType) {
+				throw new ExpError(null, -1, "Unit returned by the expression does not match the "
+						+ "attribute. Received: %s, expected: %s",
+						value.unitType.getSimpleName(), h.getUnitType().getSimpleName());
+			}
+			assignValue = value.getCopy();
+		}
 
 		h.setValue(assignValue);
 	}
