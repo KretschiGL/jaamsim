@@ -92,6 +92,14 @@ public class Queue extends LinkedComponent {
 	         exampleList = {"Branch1"})
 	protected final InterfaceEntityInput<Linkable> renegeDestination;
 
+	@Keyword(description = "Maximum number of objects that can be placed in the queue. "
+	                     + "An error message is generated if this limit is exceeded.\n\n"
+	                     + "This input is intended to trap a model error that causes the queue "
+	                     + "length to grow without bound. "
+	                     + "It has no effect on model logic.",
+	         exampleList = {"100"})
+	protected final IntegerInput maxValidLength;
+
 	@Keyword(description = "The amount of graphical space shown between DisplayEntity objects in "
 	                     + "the queue.",
 	         exampleList = {"1 m"})
@@ -143,6 +151,9 @@ public class Queue extends LinkedComponent {
 
 		renegeDestination = new InterfaceEntityInput<>(Linkable.class, "RenegeDestination", KEY_INPUTS, null);
 		this.addInput(renegeDestination);
+
+		maxValidLength = new IntegerInput("MaxValidLength", KEY_INPUTS, 10000);
+		this.addInput(maxValidLength);
 
 		spacing = new ValueInput("Spacing", FORMAT, 0.0d);
 		spacing.setUnitType(DistanceUnit.class);
@@ -259,6 +270,9 @@ public class Queue extends LinkedComponent {
 
 		QueueEntry entry = new QueueEntry(ent, m, pri, n, simTime, rh);
 		storage.add(entry);
+
+		if (storage.size() > maxValidLength.getValue())
+			error("Maximum valid queue length of %s has been exceeded", maxValidLength.getValue());
 
 		// Notify the users of this queue
 		if (!userUpdateHandle.isScheduled())
@@ -505,20 +519,34 @@ public class Queue extends LinkedComponent {
 
 		// Find the queue with the fewest match values
 		Queue shortest = null;
-		int count = -1;
+		int count = Integer.MAX_VALUE;
 		for (Queue que : queueList) {
-			if (que.getEntityTypes().size() > count) {
+			if (que.storage.getTypes().size() < count) {
 				count = que.getEntityTypes().size();
 				shortest = que;
 			}
 		}
 
-		// Return the first match value that has sufficient entities in each queue
+		// Find the match values that have sufficient entities in each queue
+		ArrayList<String> matchList = new ArrayList<>();
 		for (String m : shortest.getEntityTypes()) {
 			if (Queue.sufficientEntities(queueList, numberList, m))
-				return m;
+				matchList.add(m);
 		}
-		return null;
+
+		// Select the match value with the earliest entity arrival
+		String ret = null;
+		double earliestTime = Double.POSITIVE_INFINITY;
+		for (String m : matchList) {
+			for (Queue que : queueList) {
+				double timeAdded = que.storage.first(m).timeAdded;
+				if (timeAdded < earliestTime) {
+					ret = m;
+					earliestTime = timeAdded;
+				}
+			}
+		}
+		return ret;
 	}
 
 	/**

@@ -44,6 +44,7 @@ import com.jaamsim.states.StateEntity;
 import com.jaamsim.ui.EventViewer;
 import com.jaamsim.ui.LogBox;
 import com.jaamsim.units.DimensionlessUnit;
+import com.jaamsim.units.TimeUnit;
 import com.jaamsim.units.Unit;
 
 public class JaamSimModel {
@@ -794,9 +795,18 @@ public class JaamSimModel {
 			ent.setFlag(Entity.FLAG_RETAINED);
 
 		ent.parent = parent;
-		ent.setLocalName(name); // Note: child entities will be added to its parent during this call
+		ent.entityName = name;
+		if (reg)
+			addNamedEntity(ent);
 
+		// Create any objects associated with this entity and set their inputs
+		// (These objects and their inputs are not be marked as 'edited' to avoid having them saved
+		// to the input file)
+		boolean bool = isRecordEdits();
+		setRecordEdits(false);
 		ent.postDefine();
+		setRecordEdits(bool);
+
 		return ent;
 	}
 
@@ -814,47 +824,47 @@ public class JaamSimModel {
 		return ent;
 	}
 
+	public final void addNamedEntity(Entity ent) {
+		if (ent.parent != null) {
+			ent.parent.addChild(ent);
+			return;
+		}
+
+		synchronized (namedEntities) {
+			if (namedEntities.get(ent.entityName) != null)
+				throw new ErrorException("Entity name: %s is already in use.", ent.entityName);
+			namedEntities.put(ent.entityName, ent);
+		}
+	}
+
+	public final void removeNamedEntity(Entity ent) {
+		if (ent.parent != null) {
+			ent.parent.removeChild(ent);
+			return;
+		}
+
+		synchronized (namedEntities) {
+			if (namedEntities.remove(ent.entityName) != ent)
+				throw new ErrorException("Named Entities Internal Consistency error");
+		}
+	}
+
 	/**
 	 * Changes the specified entity's name.
-	 * @param e - entity to be renamed
+	 * @param ent - entity to be renamed
 	 * @param newName - new local name for the entity
 	 */
-	final void renameEntity(Entity e, String newName) {
-		synchronized(namedEntities) {
-			// Unregistered entities do not appear in the named entity hashmap, no consistency checks needed
-			if (!e.isRegistered()) {
-				e.entityName = newName;
-				return;
-			}
-
-			if (e.getParent() != getSimulation()) {
-				// This entity is part of a submodel
-				Entity parent = e.getParent();
-
-				String oldName = e.getLocalName();
-				e.entityName = newName;
-
-				if (oldName == null) {
-					// Newly created entity
-					parent.addChild(e);
-				} else {
-					// Genuine renaming
-					parent.renameChild(e, oldName, newName);
-				}
-				return;
-			}
-
-			// This is a top-level entity
-			if (namedEntities.get(newName) != null)
-				throw new ErrorException("Entity name: %s is already in use.", newName);
-
-			String oldName = e.entityName;
-			if (oldName != null && namedEntities.remove(oldName) != e)
-				throw new ErrorException("Named Entities Internal Consistency error");
-
-			e.entityName = newName;
-			namedEntities.put(newName, e);
+	final void renameEntity(Entity ent, String newName) {
+		if (!ent.isRegistered()) {
+			ent.entityName = newName;
+			return;
 		}
+
+		if (ent.entityName != null) {
+			removeNamedEntity(ent);
+		}
+		ent.entityName = newName;
+		addNamedEntity(ent);
 	}
 
 	private void validateEntList() {
@@ -1004,15 +1014,8 @@ public class JaamSimModel {
 		synchronized (namedEntities) {
 			validateEntList();
 			numLiveEnts--;
-			if (e.isRegistered()) {
-				if (e.parent == null) {
-					if (e != namedEntities.remove(e.entityName))
-						throw new ErrorException("Named Entities Internal Consistency error: %s", e);
-				}
-				else {
-					e.parent.removeChild(e);
-				}
-			}
+			if (e.isRegistered())
+				removeNamedEntity(e);
 
 			e.entityName = null;
 			e.setFlag(Entity.FLAG_DEAD);
@@ -1344,12 +1347,31 @@ public class JaamSimModel {
 		return numWarnings;
 	}
 
-	public void setLastTickForTrace(long tick) {
-		lastTickForTrace = tick;
-	}
+	public final void trace(int indent, Entity ent, String fmt, Object... args) {
+		// Print a TIME header every time time has advanced
+		EventManager evt = EventManager.current();
+		long traceTick = evt.getTicks();
+		if (lastTickForTrace != traceTick) {
+			double unitFactor = Unit.getDisplayedUnitFactor(TimeUnit.class);
+			String unitString = Unit.getDisplayedUnit(TimeUnit.class);
+			System.out.format(" \nTIME = %.6f %s,  TICKS = %d\n",
+					evt.ticksToSeconds(traceTick) / unitFactor, unitString,
+					traceTick);
+			lastTickForTrace = traceTick;
+		}
 
-	public long getLastTickForTrace() {
-		return lastTickForTrace;
+		// Create an indent string to space the lines
+		StringBuilder str = new StringBuilder("");
+		for (int i = 0; i < indent; i++)
+			str.append("   ");
+
+		// Append the Entity name if provided
+		if (ent != null)
+			str.append(ent.getName()).append(":");
+
+		str.append(String.format(fmt, args));
+		System.out.println(str.toString());
+		System.out.flush();
 	}
 
 	public boolean isPreDefinedEntity(Entity ent) {

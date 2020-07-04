@@ -184,7 +184,7 @@ public abstract class Device extends StateUserEntity implements ObserverEntity, 
 			error("Infinite duration");
 
 		// Set the state for the time step
-		long durTicks = EventManager.secsToNearestTick(duration);
+		long durTicks = EventManager.current().secondsToNearestTick(duration);
 		if (durTicks > 0L) {
 			setPresentState();
 		}
@@ -250,7 +250,7 @@ public abstract class Device extends StateUserEntity implements ObserverEntity, 
 
 		if (this.isBusy()) {
 			double dt = simTime - lastUpdateTime;
-			duration -= dt;
+			duration = Math.max(0.0d, duration - dt);
 			this.updateProgress(dt);
 		}
 		lastUpdateTime = simTime;

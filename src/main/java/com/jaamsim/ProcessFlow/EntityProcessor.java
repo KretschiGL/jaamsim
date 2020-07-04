@@ -24,7 +24,10 @@ import com.jaamsim.Graphics.DisplayEntity;
 import com.jaamsim.Samples.SampleConstant;
 import com.jaamsim.Samples.SampleInput;
 import com.jaamsim.Samples.TimeSeries;
+import com.jaamsim.basicsim.EntityTarget;
+import com.jaamsim.basicsim.SubjectEntity;
 import com.jaamsim.events.Conditional;
+import com.jaamsim.events.EventHandle;
 import com.jaamsim.events.EventManager;
 import com.jaamsim.events.ProcessTarget;
 import com.jaamsim.input.Keyword;
@@ -33,7 +36,7 @@ import com.jaamsim.resourceObjects.AbstractResourceProvider;
 import com.jaamsim.units.DimensionlessUnit;
 import com.jaamsim.units.TimeUnit;
 
-public class EntityProcessor extends Seize {
+public class EntityProcessor extends AbstractLinkedResourceUser {
 
 	@Keyword(description = "The maximum number of entities that can be processed simultaneously.\n"
 	                     + "If the capacity changes during the simulation run, the EntityProcessor "
@@ -53,18 +56,6 @@ public class EntityProcessor extends Seize {
 
 	{
 		trace.setHidden(false);
-
-		processPosition.setHidden(false);
-		workingStateListInput.setHidden(false);
-		immediateMaintenanceList.setHidden(false);
-		forcedMaintenanceList.setHidden(false);
-		opportunisticMaintenanceList.setHidden(false);
-		immediateBreakdownList.setHidden(false);
-		forcedBreakdownList.setHidden(false);
-		opportunisticBreakdownList.setHidden(false);
-
-		immediateThresholdList.setHidden(false);
-		immediateReleaseThresholdList.setHidden(false);
 
 		resourceList.setRequired(false);
 
@@ -120,15 +111,35 @@ public class EntityProcessor extends Seize {
 		}
 	}
 
-	@Override
-	public void queueChanged() {
+	public void stateChanged() {
 		if (getResourceList().isEmpty()) {
 			startNextEntities();
+			return;
 		}
-		else {
-			super.queueChanged();
+		if (!isReadyToStart())
+			return;
+		AbstractResourceProvider.notifyResourceUsers(getResourceList());
+	}
+
+	@Override
+	public void queueChanged() {
+		stateChanged();
+	}
+
+	@Override
+	public void observerUpdate(SubjectEntity subj) {
+		if (!stateChangedHandle.isScheduled()) {
+			EventManager.scheduleTicks(0, 10, true, stateChangedTarget, stateChangedHandle);
 		}
 	}
+
+	private final EventHandle stateChangedHandle = new EventHandle();
+	private final ProcessTarget stateChangedTarget = new EntityTarget<EntityProcessor>(this, "stateChanged") {
+		@Override
+		public void process() {
+			stateChanged();
+		}
+	};
 
 	@Override
 	public boolean isReadyToStart() {
@@ -140,22 +151,13 @@ public class EntityProcessor extends Seize {
 
 	@Override
 	public void startNextEntity() {
-		if (isTraceFlag()) trace(2, "startNextEntity");
-
-		// Remove the first entity from the queue
+		super.startNextEntity();
 		double simTime = getSimTime();
-		String m = this.getNextMatchValue(simTime);
-		DisplayEntity ent = getQueue(simTime).removeFirstForMatch(m);
-		if (ent == null)
-			error("Entity not found for specified Match value: %s", m);
-		this.registerEntity(ent);
-
-		// Seize the resources and pass the entity to the next component
-		this.seizeResources();
+		DisplayEntity ent = getReceivedEntity(simTime);
 
 		// Set the service duration
 		double dur = serviceTime.getValue().getNextSample(simTime);
-		long ticks = EventManager.secsToNearestTick(dur);
+		long ticks = EventManager.current().secondsToNearestTick(dur);
 
 		// Add the entity to the list of entities to be processed
 		newEntryList.add(new ProcessorEntry(ent, getSeizedUnits(simTime), ticks));
@@ -186,7 +188,8 @@ public class EntityProcessor extends Seize {
 		for (ProcessorEntry entry : entryList) {
 			ticks = Math.min(ticks, entry.remainingTicks);
 		}
-		return EventManager.ticksToSecs(ticks);
+		EventManager evt = this.getJaamSimModel().getEventManager();
+		return evt.ticksToSeconds(ticks);
 	}
 
 	@Override
@@ -195,7 +198,7 @@ public class EntityProcessor extends Seize {
 
 		// Decrement the remaining durations for each of the entities
 		if (isTraceFlag()) traceLine(3, "BEFORE - entryList=%s", entryList);
-		long delta = EventManager.secsToNearestTick(dt);
+		long delta = EventManager.current().secondsToNearestTick(dt);
 		for (ProcessorEntry entry : entryList) {
 			entry.remainingTicks -= delta;
 		}
@@ -253,11 +256,7 @@ public class EntityProcessor extends Seize {
 				entry.remainingTicks = 0L;
 			}
 		}
-
-		// If no resources are required, start as many entities as possible
-		if (getResourceList().isEmpty())
-			startNextEntities();
-
+		stateChanged();
 		super.thresholdChanged();
 	}
 
@@ -268,14 +267,7 @@ public class EntityProcessor extends Seize {
 
 	@Override
 	public void endDowntime(DowntimeEntity down) {
-
-		// If no resources are required, start as many entities as possible
-		if (getResourceList().isEmpty())
-			startNextEntities();
-
-		if (isReadyToStart()) {
-			AbstractResourceProvider.notifyResourceUsers(getResourceList());
-		}
+		stateChanged();
 		super.endDowntime(down);
 	}
 
@@ -315,12 +307,7 @@ public class EntityProcessor extends Seize {
 
 		// Select the resource users to notify
 		if (getCapacity(getSimTime()) > lastCapacity) {
-			if (getResourceList().isEmpty()) {
-				startNextEntities();
-			}
-			else {
-				AbstractResourceProvider.notifyResourceUsers(getResourceList());
-			}
+			stateChanged();
 		}
 
 		// Wait for the next capacity change
@@ -396,8 +383,9 @@ public class EntityProcessor extends Seize {
 		if (isBusy()) {
 			dt = simTime - getLastUpdateTime();
 		}
+		EventManager evt = this.getJaamSimModel().getEventManager();
 		for (int i = 0; i < entryList.size(); i++) {
-			ret[i] = EventManager.ticksToSecs(entryList.get(i).remainingTicks) - dt;
+			ret[i] = evt.ticksToSeconds(entryList.get(i).remainingTicks) - dt;
 		}
 		return ret;
 	}

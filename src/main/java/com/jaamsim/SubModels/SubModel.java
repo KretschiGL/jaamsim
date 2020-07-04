@@ -1,7 +1,6 @@
 /*
  * JaamSim Discrete Event Simulation
- * Copyright (C) 2015 Ausenco Engineering Canada Inc.
- * Copyright (C) 2019 JaamSim Software Inc.
+ * Copyright (C) 2018-2020 JaamSim Software Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.jaamsim.basicsim;
+package com.jaamsim.SubModels;
 
-import com.jaamsim.events.ProcessTarget;
+public class SubModel extends CompoundEntity {
 
-public class ClearStatisticsTarget extends ProcessTarget {
-
-	final JaamSimModel simModel;
-
-	public ClearStatisticsTarget(JaamSimModel model) {
-		simModel = model;
-	}
-
-	@Override
-	public String getDescription() {
-		return "Simulation.clearStatistics";
-	}
-
-	@Override
-	public void process() {
-		simModel.clearStatistics();
-	}
+	public SubModel() {}
 
 }
