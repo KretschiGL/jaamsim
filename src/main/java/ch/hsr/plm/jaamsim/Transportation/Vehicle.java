@@ -222,7 +222,7 @@ public class Vehicle extends RequestDispatcher implements IMovable, ISteerable, 
         this.startProcess(vehicleAvailable);
     }
 
-    private ProcessTarget vehicleAvailable = new EntityTarget<>(this, "vehicleAvailable") {
+    private ProcessTarget vehicleAvailable = new EntityTarget<Vehicle>(this, "vehicleAvailable") {
 
         @Override
         public void process() {
